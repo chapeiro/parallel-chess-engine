@@ -373,43 +373,11 @@ void Board::printbb(bitboard bb){
 
 U64 Board::perft(int depth){
 	horizonNodes = 0;
-	key oldZobr = zobr;
-	bitboard oldep = enPassant;
-	int oldhm = halfmoves;
-	int oldfm = fullmoves;
-	int oldpl = playing;
-	bitboard oldcstl = castling;
-	int oldlhe = lastHistoryEntry;
-	bool failed = false;
 	if (playing == white){
 		search<Perft, white>(-inf, +inf, depth);
 	} else {
 		search<Perft, black>(-inf, +inf, depth);
 	}
-	if (oldZobr != zobr) {
-		std::cout << oldZobr << "|z" << zobr << std::endl;
-		failed = true;
-		key k = zobr ^ oldZobr;
-		if (k == zobrist::blackKey) std::cout << "blackKey\n" << std::endl;
-		for (int i = 0 ; i < 16 ; ++i){
-			if ( k == zobrist::castling[i]) std::cout << "castling[" << i << ']' << std::endl;
-		}
-		for (int i = 0 ; i < 8 ; ++i){
-			if ( k == zobrist::enPassant[i]) std::cout << "enPassant[" << i << ']' << std::endl;
-		}
-		for (int i = 0 ; i < 64 ; ++i){
-			for (int j = 0 ; j < 12 ; ++j){
-				if ( k == zobrist::keys[i][j]) std::cout << "keys[" << i << "][" << j << ']' << std::endl;
-			}
-		}
-	}
-	if (oldep != enPassant) {std::cout << oldep << "|ep" << enPassant << std::endl; failed = true;}
-	if (oldhm != halfmoves) {std::cout << oldhm << "|hm" << halfmoves << std::endl; failed = true;}
-	if (oldfm != fullmoves) {std::cout << oldfm << "|fm" << fullmoves << std::endl; failed = true;}
-	if (oldpl != playing) {std::cout << oldpl << "|p" << playing << std::endl; failed = true;}
-	if (oldcstl != castling) {std::cout << oldcstl << "|c" << castling << std::endl; failed = true;}
-	if (oldlhe != lastHistoryEntry) {std::cout << oldlhe << "|lhe" << lastHistoryEntry << std::endl; failed = true;}
-	if (failed) return 0;
 	return horizonNodes;
 }
 

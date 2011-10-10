@@ -217,7 +217,7 @@ template<SearchMode mode, int color> inline int Board::searchDeeper(const int &a
 	if (mode == PV){
 		if (pvFound) {
 			int score = -search<ZW, color>(-1-alpha, -alpha, depth - 1);
-			if ( score > alpha ) score = -search<PV, color>(-beta, -alpha, depth - 1);
+			if ( score > alpha ) score = -search<PV, color^1>(-beta, -alpha, depth - 1);
 			return score;
 		} else {
 			return -search<PV, color>(-beta, -alpha, depth - 1);
@@ -228,7 +228,7 @@ template<SearchMode mode, int color> inline int Board::searchDeeper(const int &a
 		return -search<Perft, color>(-beta, -alpha, depth - 1);
 		/**if (pvFound) {
 			int score = -search<ZW, color>(-1-alpha, -alpha, depth - 1);
-			if ( score > alpha ) score = -search<Perft, color>(-beta, -alpha, depth - 1);
+			if ( score > alpha ) score = -search<Perft, color^1>(-beta, -alpha, depth - 1);
 			return score;
 		} else {
 			return -search<Perft, color>(-beta, -alpha, depth - 1);
@@ -296,8 +296,8 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				if (validPosition<color>()) {
 					for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
 						score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
-						Pieces[prom] ^= to;
-						zobr ^= zobrist::keys[toSq][prom];
+						Pieces[prom | color] ^= to;
+						zobr ^= zobrist::keys[toSq][prom | color];
 						if( score >= beta ) {
 							removeLastHistoryEntry();
 							Pieces[captured] ^= to;
@@ -317,9 +317,9 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							alpha = score;
 							pvFound = true;
 						}
-						if (prom > (PAWN | colormask) + 2){
-							Pieces[prom - 2] ^= to;
-							zobr ^= zobrist::keys[toSq][prom - 2];
+						if (prom >= 2){
+							Pieces[(prom - 2) | color] ^= to;
+							zobr ^= zobrist::keys[toSq][(prom - 2) | color];
 						}
 					}
 				} else {
@@ -476,8 +476,8 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		if (validPosition<color>()) {
 			for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
 				score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
-				Pieces[prom] ^= to;
-				zobr ^= zobrist::keys[toSq][prom];
+				Pieces[prom | color] ^= to;
+				zobr ^= zobrist::keys[toSq][prom | color];
 				if( score >= beta ) {
 					removeLastHistoryEntry();
 					Pieces[PAWN | color] ^= from;
@@ -494,9 +494,9 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					alpha = score;
 					pvFound = true;
 				}
-				if (prom > (PAWN | colormask) + 2){
-					Pieces[prom - 2] ^= to;
-					zobr ^= zobrist::keys[toSq][prom - 2];
+				if (prom >= 2){
+					Pieces[(prom - 2) | color] ^= to;
+					zobr ^= zobrist::keys[toSq][(prom - 2) | color];
 				}
 			}
 		} else {
@@ -731,7 +731,6 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							zobr ^= toggle;
 
 							zobr ^= ct2;
-							zobr ^= ct;
 							castling = oldcastling;
 
 							halfmoves = oldhm;
@@ -1009,7 +1008,6 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						zobr ^= toggle;
 
 						zobr ^= ct2;
-						zobr ^= ct;
 						castling = oldcastling;
 
 						halfmoves = oldhm;
@@ -1230,7 +1228,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		moves -= stHorNodes;
 		int oldplaying = playing;
 		playing = color;
-		//std::cout << pre << getFEN() << '\t' << moves;
+		std::cout << pre << getFEN() << '\t' << moves;
 #ifdef WIN32
 		DWORD bytes_read, bytes_written;
 		CHAR buffer[4096];
@@ -1245,23 +1243,22 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		// Read the message from the child process
 		ReadFile( child_output_read, buffer, sizeof(buffer), &bytes_read, NULL);
 		buffer[bytes_read] = 0;
+		playing = oldplaying;
 		unsigned int a = 0;
 		sscanf(buffer, "Nodes: %d,", &a);
-		if (a != moves) {
-			std::cout << pre << getFEN() << '\t' << moves << "\tFailed!\t" << a << '\n';
+		if (a == moves) {
+			std::cout << "\tOK\n";
+		} else {
+			std::cout << "\tFailed!\t" << a << '\n';
 			std::cout << "-----------------------------------------\n";
 			std::string oldpre = pre;
 			pre += "\t";
 			dividedepth = depth-1;
 			search<mode, color>(alpha, beta, depth);
-			search<mode, color>(alpha, beta, depth);
-			std::cout << "-----------------------------------------" << std::endl;
+			std::cout << "-----------------------------------------\n";
 			pre = oldpre;
 			dividedepth = depth;
-		}/** else {
-			std::cout << "\tOK\n";
-		}**/
-		playing = oldplaying;
+		}
 #else
 		std::cout << endl;
 #endif
