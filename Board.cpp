@@ -11,12 +11,43 @@
 #include "MoveEncoding.h"
 #include "Values.h"
 
+const int Value::piece[12] = {100,
+							 -100,
+							  320,
+							 -320,
+							  325,
+							 -325,
+							  500,
+							 -500,
+							  975,
+							 -975,
+							  MAT,
+							 -MAT};
+int Board::hashSize = 1;
+
+Board* Board::createBoard(const char FEN[]) {
+	char fenBoard[71], fenEnP[3];
+	char fenCastling[] = { '-', '-', '-', '-', '\0'};
+	int fenHC, fenFM, fenEnPX, fenEnPY;
+	char fenPlaying;
+	sscanf(FEN, "%71s %c %4s %2s %d %d", fenBoard, &fenPlaying, fenCastling, fenEnP, &fenHC, &fenFM);
+	if (fenEnP[0]=='-'){
+		fenEnPX = -1;
+		fenEnPY = -1;
+	} else {
+		fenEnPX = fenEnP[0]-'a';
+		fenEnPY = fenEnP[1]-'1';
+	}
+	return new Board(fenBoard, fenPlaying, fenCastling, fenEnPX, fenEnPY, fenHC, fenFM);
+}
+
 Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, int fenEnPY, int fenHC, int fenFM){
 	//General initialize
 	for (int i = 0 ; i < PIECESMAX ; ++i) Pieces[i] = bitboard(0);
 	castling = 0;
 	zobr = 0;
 	lastHistoryEntry = 0;
+	pieceScore = 0;
 	int wk (0), bk(0);
 	//FEN processing
 	//	according to :
@@ -33,10 +64,13 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 				x += inp-'0';
 			} else {
 				ind = getPieceIndex(inp);
+				if ((ind & ~colormask) == WRONG_PIECE) throw MalformedFEN();
 				if (ind == (KING | white)){
 					++wk;
 				} else if (ind == (KING | black)){
 					++bk;
+				} else {
+					pieceScore += Value::piece[ind];
 				}
 				sq = index(x, y);
 				updatePieces(sq, ind);
@@ -45,8 +79,8 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 		} while (x <= 7);
 		++index1;
 	}
-	if (wk!=1) throw 1;
-	if (bk!=1) throw 2;
+	if (wk!=1) throw KingException(white, wk);
+	if (bk!=1) throw KingException(black, bk);
 	// 2. Active color
 	if (fenPlaying=='b'){
 		playing = black;
@@ -102,6 +136,7 @@ int Board::getWhitePieceIndex(char p){
 void Board::capture(int to){
 	for (int i = playing^1 ; i < PIECESMAX ; i+=2){
 		if ((Pieces[i] & filled::normal[to])!=0){
+			pieceScore -= Value::piece[i];
 			updatePieces(to, i);
 			return;
 		}
@@ -132,6 +167,8 @@ void Board::make(move m){
 			if (rank(to)==lastRank){
 				int a = getWhitePieceIndex(m.promoteTo);
 				if (a == WRONG_PIECE) a = QUEEN;
+				pieceScore += Value::piece[a | playing];
+				pieceScore -= Value::piece[PAWN | playing];
 				updatePieces(to, a | playing);
 			} else {
 				updatePieces(to, playing | PAWN);
@@ -145,6 +182,8 @@ void Board::make(move m){
 				if (rank(to)==lastRank){
 					int a = getWhitePieceIndex(m.promoteTo);
 					if (a == WRONG_PIECE) a = QUEEN;
+					pieceScore += Value::piece[a | playing];
+					pieceScore -= Value::piece[PAWN | playing];
 					updatePieces(to, a | playing);
 				} else {
 					updatePieces(to, playing | PAWN);
@@ -160,6 +199,7 @@ void Board::make(move m){
 				//en passant
 				updatePieces(from, playing | PAWN);
 				updatePieces(to, playing | PAWN);
+				pieceScore -= Value::piece[PAWN | (playing^1)];
 				updatePieces(index(file(to), rank(from)), (playing^1) | PAWN);
 				enPassant = bitboard(0);
 			}
@@ -203,7 +243,7 @@ void Board::make(move m){
 			if ((Pieces[i] & filled::normal[from])!=0){
 				updatePieces(from, i);
 				updatePieces(to, i);
-				if (i-playing==ROOK && (filled::normal[from] & allcastlingrights) != 0){
+				if ((i^playing)==ROOK && (filled::normal[from] & allcastlingrights) != 0){
 						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						castling ^= filled::normal[from];
 						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
@@ -373,12 +413,93 @@ void Board::printbb(bitboard bb){
 
 U64 Board::perft(int depth){
 	horizonNodes = 0;
+	nodes = 0;
+	key oldZobr = zobr;
+	bitboard oldep = enPassant;
+	int oldhm = halfmoves;
+	int oldfm = fullmoves;
+	int oldpl = playing;
+	bitboard oldcstl = castling;
+	int oldlhe = lastHistoryEntry;
+	int psc = pieceScore;
+	bool failed = false;
 	if (playing == white){
 		search<Perft, white>(-inf, +inf, depth);
 	} else {
 		search<Perft, black>(-inf, +inf, depth);
 	}
+	if (oldZobr != zobr) {
+		std::cout << oldZobr << "|z" << zobr << std::endl;
+		failed = true;
+		key k = zobr ^ oldZobr;
+		if (k == zobrist::blackKey) std::cout << "blackKey\n" << std::endl;
+		for (int i = 0 ; i < 16 ; ++i){
+			if ( k == zobrist::castling[i]) std::cout << "castling[" << i << ']' << std::endl;
+		}
+		for (int i = 0 ; i < 8 ; ++i){
+			if ( k == zobrist::enPassant[i]) std::cout << "enPassant[" << i << ']' << std::endl;
+		}
+		for (int i = 0 ; i < 64 ; ++i){
+			for (int j = 0 ; j < 12 ; ++j){
+				if ( k == zobrist::keys[i][j]) std::cout << "keys[" << i << "][" << j << ']' << std::endl;
+			}
+		}
+	}
+	if (oldep != enPassant) {std::cout << oldep << "|ep" << enPassant << std::endl; failed = true;}
+	if (oldhm != halfmoves) {std::cout << oldhm << "|hm" << halfmoves << std::endl; failed = true;}
+	if (oldfm != fullmoves) {std::cout << oldfm << "|fm" << fullmoves << std::endl; failed = true;}
+	if (oldpl != playing) {std::cout << oldpl << "|p" << playing << std::endl; failed = true;}
+	if (oldcstl != castling) {std::cout << oldcstl << "|c" << castling << std::endl; failed = true;}
+	if (oldlhe != lastHistoryEntry) {std::cout << oldlhe << "|lhe" << lastHistoryEntry << std::endl; failed = true;}
+	if (psc != pieceScore) {std::cout << psc << "|pS" << pieceScore << std::endl; failed = true;}
+	if (failed) return 0;
 	return horizonNodes;
+}
+
+int Board::test(int depth){
+	horizonNodes = 0;
+	nodes = 0;
+	key oldZobr = zobr;
+	bitboard oldep = enPassant;
+	int oldhm = halfmoves;
+	int oldfm = fullmoves;
+	int oldpl = playing;
+	bitboard oldcstl = castling;
+	int oldlhe = lastHistoryEntry;
+	int psc = pieceScore;
+	bool failed = false;
+	int score;
+	if (playing == white){
+		score = search<PV, white>(-inf, +inf, depth);
+	} else {
+		score = -search<PV, black>(-inf, +inf, depth);
+	}
+	if (oldZobr != zobr) {
+		std::cout << oldZobr << "|z" << zobr << std::endl;
+		failed = true;
+		key k = zobr ^ oldZobr;
+		if (k == zobrist::blackKey) std::cout << "blackKey\n" << std::endl;
+		for (int i = 0 ; i < 16 ; ++i){
+			if ( k == zobrist::castling[i]) std::cout << "castling[" << i << ']' << std::endl;
+		}
+		for (int i = 0 ; i < 8 ; ++i){
+			if ( k == zobrist::enPassant[i]) std::cout << "enPassant[" << i << ']' << std::endl;
+		}
+		for (int i = 0 ; i < 64 ; ++i){
+			for (int j = 0 ; j < 12 ; ++j){
+				if ( k == zobrist::keys[i][j]) std::cout << "keys[" << i << "][" << j << ']' << std::endl;
+			}
+		}
+	}
+	if (oldep != enPassant) {std::cout << oldep << "|ep" << enPassant << std::endl; failed = true;}
+	if (oldhm != halfmoves) {std::cout << oldhm << "|hm" << halfmoves << std::endl; failed = true;}
+	if (oldfm != fullmoves) {std::cout << oldfm << "|fm" << fullmoves << std::endl; failed = true;}
+	if (oldpl != playing) {std::cout << oldpl << "|p" << playing << std::endl; failed = true;}
+	if (oldcstl != castling) {std::cout << oldcstl << "|c" << castling << std::endl; failed = true;}
+	if (oldlhe != lastHistoryEntry) {std::cout << oldlhe << "|lhe" << lastHistoryEntry << std::endl; failed = true;}
+	if (psc != pieceScore) {std::cout << psc << "|pS" << pieceScore << std::endl; failed = true;}
+	if (failed) return 0;
+	return score;
 }
 
 bitboard Board::bishopAttacks(bitboard occ, const int &sq){

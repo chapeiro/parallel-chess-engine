@@ -10,7 +10,8 @@
 
 class Value{
 public :
-	static const int MAT = 1048576; //1 << 20
+	static const int MAT = 1 << 20;
+	static const int piece[12];
 };
 
 const int inf = Value::MAT + 1;

@@ -1,7 +1,7 @@
 /*
  * MoveEncoding.cpp
  *
- *  Created on: 2 Áõã 2011
+ *  Created on: 2 ï¿½ï¿½ï¿½ 2011
  *      Author: Chrysogelos Periklis
  */
 
@@ -15,17 +15,17 @@ move getNullMove(){
 	return n;
 }
 
-move convertUCImove(string s){
-	if (s.compare("0000")==0){
+move convertUCImove(char m[6]){
+	if (m=="0000"){
 		return getNullMove();
 	}
 	move ret;
-	ret.fromX = s[0]-'a';
-	ret.fromY = s[1]-'1';
-	ret.toX = s[2]-'a';
-	ret.toY = s[3]-'1';
-	if (s.length()==5){
-		ret.promoteTo = s[4]-'a'+'A';
+	ret.fromX = m[0]-'a';
+	ret.fromY = m[1]-'1';
+	ret.toX = m[2]-'a';
+	ret.toY = m[3]-'1';
+	if (m[4]!='\0'){
+		ret.promoteTo = m[4]-'a'+'A';
 	} else {
 		ret.promoteTo = '-';
 	}

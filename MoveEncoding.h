@@ -1,7 +1,7 @@
 /*
  * MoveEncoding.h
  *
- *  Created on: 2 Αυγ 2011
+ *  Created on: 2 οΏ½οΏ½οΏ½ 2011
  *      Author: Chrysogelos Periklis
  */
 
@@ -45,7 +45,7 @@ struct move{
 	}
 };
 
-move convertUCImove(std::string s);
+move convertUCImove(char m[6]);
 bool moveIsNull(move m);
 
 #endif /* MOVEENCODING_H_ */
