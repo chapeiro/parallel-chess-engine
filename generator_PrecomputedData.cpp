@@ -6,7 +6,8 @@
  */
 
 #include "cchapeiro.h"
-#include "Board.h"
+#include "SquareMapping.h"
+#include "MagicsAndPrecomputedData.h"
 #include "Utilities.cpp"
 #include <stdio.h>
 #include <iostream>
@@ -25,10 +26,10 @@ void precomputeData(){
 	fprintf(pd, " **/\n\n");
 	fprintf(pd, "#include \"Board.h\"\n");
 	fprintf(pd, "#include \"MagicsAndPrecomputedData.h\"\n\n");
-	cout << "Generating De Bruijn's number and bitscan ..." << endl;
+	std::cout << ndbgline << "Generating De Bruijn's number and bitscan ..." << endl;
 	CGenBitScan a;
 	a.generateBitScan(pd);
-	cout << "Generating squares, files and ranks ..." << endl;
+	std::cout << ndbgline << "Generating squares, files and ranks ..." << endl;
 	bitboard fnormal[64];
 	bitboard frank[8], ffile[8];
 	bitboard notFnormal[64];
@@ -124,7 +125,7 @@ void precomputeData(){
 			(   ( b << 8) | ( b >> 8 ) )
 					);
 	}
-	cout << "Generating Knight's Moves..." << endl;
+	std::cout << ndbgline << "Generating Knight's Moves..." << endl;
 	fprintf(pd, "const bitboard KnightMoves[64] = {\n\t");
 	for (int i = 0 ; i < 64 ; ++i){
 		fprintf(pd, formatBitboard, KnightMoves[i]);
@@ -134,7 +135,7 @@ void precomputeData(){
 		}
 	}
 	fprintf(pd, "\n};\n\n");
-	cout << "Generating King's Moves..." << endl;
+	std::cout << ndbgline << "Generating King's Moves..." << endl;
 	fprintf(pd, "const bitboard KingMoves[64] = {\n\t");
 	for (int i = 0 ; i < 64 ; ++i){
 		fprintf(pd, formatBitboard, KingMoves[i]);
@@ -145,7 +146,7 @@ void precomputeData(){
 	}
 	fprintf(pd, "\n};\n");
 	fclose(pd);
-	cout << "Generating Magics For Rooks and Bishops..." << endl;
+	std::cout << ndbgline << "Generating Magics For Rooks and Bishops..." << endl;
 	FILE * out;
 	out = fopen ("precompd_magics.cpp", "w");
 	MagicGenerator(maxRookBits, maxBishopBits, out);

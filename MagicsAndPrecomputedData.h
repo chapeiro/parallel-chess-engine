@@ -11,6 +11,10 @@
 
 typedef chapeiro::bitboard bitboard;
 
+#include <stdio.h>
+void precomputeData();
+void MagicGenerator(int maxBitsRook, int maxBitsBishop, FILE* out);
+
 namespace filled{
  	extern const bitboard normal[64];//, a1h8[64], h1a8[64], vertical[64];
 	extern const bitboard rank[8], file[8];

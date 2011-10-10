@@ -14,31 +14,12 @@
 #ifdef WIN32
 #include <windows.h>
 #endif
-typedef Board Board;
 using namespace std;
 bool debugcc = true;
-
 int hashSize = 1;
 
 bool initializeEngine(){
 	return true;
-}
-
-move convertUCImove(string s){
-	if (s.compare("0000")==0){
-		return Board::getNullMove();
-	}
-	move ret;
-	ret.fromX = s[0]-'a';
-	ret.fromY = s[1]-'1';
-	ret.toX = s[2]-'a';
-	ret.toY = s[3]-'1';
-	if (s.length()==5){
-		ret.promoteTo = Board::convertPromotion(s[4]);
-	} else {
-		ret.promoteTo = NoPromotion;
-	}
-	return ret;
 }
 
 /**void signEndOfFile(string reason){
@@ -46,8 +27,8 @@ move convertUCImove(string s){
 	time_t rawtime;
 	time(&rawtime);;
 	strftime (ct, 20, "%Y/%m/%d %H:%M:%S", localtime(&rawtime));
-	dbgstream << "################# DEBUG ENDED #################\n";
-	dbgstream << '(' << reason << ")\n" << ct << '\n';
+	std::cout << "################# DEBUG ENDED #################\n";
+	std::cout << '(' << reason << ")\n" << ct << '\n';
 }
 
 void signFile(){
@@ -55,11 +36,11 @@ void signFile(){
 	time_t rawtime;
 	time(&rawtime);
 	strftime (ct, 20, "%Y/%m/%d %H:%M:%S", localtime(&rawtime));
-	dbgstream << "CChapeiro - Log File\n";
-	dbgstream << "\tDebug Details:\n";
-	dbgstream << "\t\tChapeiro Version : " << version << '\n';
-	dbgstream << "\t\tFile Created On  : " << ct << '\n';
-	dbgstream << "################# DEBUG INFO #################\n";
+	std::cout << "CChapeiro - Log File\n";
+	std::cout << "\tDebug Details:\n";
+	std::cout << "\t\tChapeiro Version : " << version << '\n';
+	std::cout << "\t\tFile Created On  : " << ct << '\n';
+	std::cout << "################# DEBUG INFO #################\n";
 }**/
 
 int main(){
@@ -73,6 +54,7 @@ int main(){
 			cout << "option name Hash type spin default 1 min 1 max 512" << endl;
 			cout << "uciok" << endl;
 			bool initialized = false;
+			Board* board = new Board();
 			string input;
 			do {
 				getline(cin, input);
@@ -85,27 +67,29 @@ int main(){
 					char fenCastling[] = { '-', '-', '-', '-', '\0'};
 					int fenHC, fenFM, fenEnPX, fenEnPY;
 					char fenPlaying;
+					size_t moves;
 					stringstream feninput;
-					if (input.find("startpos")!=string::npos){
-						input.replace(0, 8, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-					} else {
-						input.erase(0, 4);
-					}
-					size_t moves = input.find("moves ");
-					if (moves!=string::npos){
-						sscanf(input.c_str(), "%71s %c %4s %2s %d %d moves ", fenBoard, &fenPlaying, fenCastling, fenEnP, &fenHC, &fenFM);
-					} else {
-						sscanf(input.c_str(), "%71s %c %4s %2s %d %d\n", fenBoard, &fenPlaying, fenCastling, fenEnP, &fenHC, &fenFM);
-					}
-					if (fenEnP[0]=='-'){
-						fenEnPX = -1;
-						fenEnPY = -1;
-					} else {
-						fenEnPX = fenEnP[0]-'a';
-						fenEnPY = fenEnP[1]-'1';
-					}
 					try {
-						Board board (fenBoard, fenPlaying, fenCastling, fenEnPX, fenEnPY, fenHC, fenFM);
+						if (input.find("startpos")!=string::npos){
+							board = new Board();//input.replace(0, 8, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+							moves = input.find("moves ");
+						} else {
+							input.erase(0, 4);
+							moves = input.find("moves ");
+							if (moves!=string::npos){
+								sscanf(input.c_str(), "%71s %c %4s %2s %d %d moves ", fenBoard, &fenPlaying, fenCastling, fenEnP, &fenHC, &fenFM);
+							} else {
+								sscanf(input.c_str(), "%71s %c %4s %2s %d %d\n", fenBoard, &fenPlaying, fenCastling, fenEnP, &fenHC, &fenFM);
+							}
+							if (fenEnP[0]=='-'){
+								fenEnPX = -1;
+								fenEnPY = -1;
+							} else {
+								fenEnPX = fenEnP[0]-'a';
+								fenEnPY = fenEnP[1]-'1';
+							}
+							board = new Board(fenBoard, fenPlaying, fenCastling, fenEnPX, fenEnPY, fenHC, fenFM);
+						}
 						if (moves!=string::npos) {
 							input.erase(0, moves+6);
 							stringstream mv;
@@ -113,18 +97,17 @@ int main(){
 							string m;
 							do {
 								mv >> m;
-								board.make(convertUCImove(m));
+								board->make(convertUCImove(m));
 							} while (!mv.eof());
 						}
-						board.print();
-					//	for (int i = 1; i <= 10 ; ++i){
-							cout << 4 << '\t' << board.perft(4) << endl;
-						//}
+						board->print();
 					} catch (int e) {
 						if (e==1) {
 							cout << "Invalid number of White Kings." << endl;
 						} else if (e==2) {
 							cout << "Invalid number of Black Kings." << endl;
+						} else if (e==3) {
+							cout << "Invalid En Passant square." << endl;
 						}
 					}
 				} else if (input.find("setoption name ")!=string::npos){
@@ -143,7 +126,7 @@ int main(){
 						debugcc = false;
 					}
 				} else if (input.find("ucinewgame")!=string::npos){
-					Board::newGame();
+					delete board;
 				} else if (input.find("go ")!=string::npos){
 					//input.erase(0, 3);
 					bool infinite = input.find("infinite") != string::npos;
@@ -176,27 +159,26 @@ int main(){
 		} else if (mode.find("exit")!=string::npos || mode.find("quit")!=string::npos){
 			return 0;
 		} else if (mode.find("precompute data")!=string::npos){
-			cout << "Generating Data. Please Wait..." << endl;
+			std::cout << ndbgline << "Generating Data. Please Wait..." << endl;
 			initializeEngine();
 			precomputeData();
-			cout << "Finished!" << endl;
+			std::cout << ndbgline << "Finished!" << endl;
 			return 0;
 		} else if (mode.find("generate zobrist")!=string::npos){
-			cout << "Generating Zobrist's keys. Please Wait..." << endl;
+			std::cout << ndbgline << "Generating Zobrist's keys. Please Wait..." << endl;
 			initializeEngine();
 			generateZobristKeys();
-			cout << "Finished!" << endl;
+			std::cout << ndbgline << "Finished!" << endl;
 			return 0;
 		} else if (mode.compare("perft")==0){
 			FILE* perftdb;
 			perftdb = fopen("PerftDatabase.perft", "r");
 			if (perftdb==NULL){
-				cout << "Open perfts' database failed!" << endl;
+				std::cout << ndbgline << "Open perfts' database failed!" << endl;
 				continue;
 			}
 			char str[1024];
 			int i = 0;
-			Board* board;
 			unsigned long long int totalMoves=0;
 			time_t totalTime=time(NULL);
 			string end = "EndOfPerft";
@@ -218,12 +200,13 @@ int main(){
 					fenEnPY = fenEnP[1]-'1';
 				}
 				try {
-					board = new Board(fenBoard, fenPlaying, fenCastling, fenEnPX, fenEnPY, fenHC, fenFM);
+					Board* board = new Board(fenBoard, fenPlaying, fenCastling, fenEnPX, fenEnPY, fenHC, fenFM);
 					cout << board->getFEN() << endl;
 					while (fgetc(perftdb)!='\n'){
 						int depth, leafnodes;
 						if (fscanf(perftdb, "D%d %d", &depth, &leafnodes)==0) break;
 						if (depth < minPerftDepth || depth > maxPerftDepth) continue;
+						board->dividedepth = -1;
 						int bperft = board->perft(depth);
 						totalMoves += bperft;
 						if (bperft == leafnodes){
@@ -257,7 +240,8 @@ int main(){
 							CHAR buffer[4096];
 							ReadFile( board->child_output_read, buffer, sizeof(buffer), &bytes_written, NULL);
 #endif
-							board->dividedepth = depth-1;
+							board->dividedepth = depth - 1;
+							board->pre = "";
 							board->perft(depth);
 #ifdef WIN32
 							WriteFile((board->child_input_write), "quit\n", strlen("quit\n"), &bytes_written, NULL);
@@ -282,7 +266,7 @@ int main(){
 			cout << "Total time : " << totalTime << "sec" << endl;
 			if (totalTime != 0) cout << "Leaf Nodes per Second : " << totalMoves / totalTime << endl;
 		} else if (mode.compare("infperft")==0){
-			Board board ((char*) "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", 'w',(char*) "KQkq", -1, -1, 0, 1);
+			Board* board = new Board();
 			int depth = 0;
 			U64 bperft;
 			U64 totalMoves = 0;
@@ -291,7 +275,7 @@ int main(){
 			while (true){
 				et = time(NULL);
 				++depth;
-				bperft = board.perft(depth);
+				bperft = board->perft(depth);
 				totalMoves += bperft;
 				cout << "depth :\t" << depth << "\tleaf nodes :\t" << bperft;
 				cout << "\ttotal nodes :\t" << totalMoves << "\ttotal time :\t" << time(NULL)-st;
@@ -299,11 +283,12 @@ int main(){
 				if (et!=0) cout << "\tnode per second :\t" << (totalMoves/et);
 				cout << endl;
 			}
+			delete board;
 		}
 	} while (true);
 	return 1;
 }
 
 void debug(string a){
-	dbgstream << ndbgline << a << '\n';
+	std::cout << ndbgline << a << '\n';
 }
