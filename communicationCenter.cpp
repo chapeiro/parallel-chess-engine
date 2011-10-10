@@ -24,7 +24,7 @@ bool initializeEngine(){
 	return true;
 }
 
-move UCIconvertMove(string s){
+move convertUCImove(string s){
 	if (s.compare("0000")==0){
 		return Board::getNullMove();
 	}
@@ -113,7 +113,7 @@ int main(){
 							string m;
 							do {
 								mv >> m;
-								board.make(UCIconvertMove(m));
+								board.make(convertUCImove(m));
 							} while (!mv.eof());
 						}
 						board.print();

@@ -304,11 +304,11 @@ U64 Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces, const b
 	return moves;
 }
 
-U64 Board::makeWhitePawnsAttackbs(bitboard attackingR, bitboard attackingL, int depth, int attindex){
+inline U64 Board::makeWhitePawnsAttackbs(bitboard attackingR, bitboard attackingL, int depth, int attindex){
 	return makeWhitePawnsAttack(attackingR, 7, depth, attindex) + makeWhitePawnsAttack(attackingL, 9, depth, attindex);
 }
 
-U64 Board::makeBlackPawnsAttackbs(bitboard attackingR, bitboard attackingL, int depth, int attindex){
+inline U64 Board::makeBlackPawnsAttackbs(bitboard attackingR, bitboard attackingL, int depth, int attindex){
 	return makeBlackPawnsAttack(attackingR, 9, depth, attindex) + makeBlackPawnsAttack(attackingL, 7, depth, attindex);
 }
 
@@ -419,48 +419,40 @@ U64 Board::makeBlackPawnsPAttack(bitboard attackingL, int sh, int depth, int cap
 	return moves;
 }
 
-
-void Board::toggleCaptureWhite(int captured, int piece, bitboard to, bitboard tf, int fromSq, int toSq){
-	Pieces[captured] ^= to;
-	zobr ^= zobrist::keys[toSq][captured];
-	Pieces[piece] ^= tf;
-	zobr ^= zobrist::keys[toSq][piece] ^ zobrist::keys[fromSq][piece];
-	White_Pieces ^= tf;
-	Black_Pieces ^= to;
-}
-
-void Board::toggleCaptureBlack(int captured, int piece, bitboard to, bitboard tf, int fromSq, int toSq){
-	Pieces[captured] ^= to;
-	zobr ^= zobrist::keys[toSq][captured];
-	Pieces[piece] ^= tf;
-	zobr ^= zobrist::keys[toSq][piece] ^ zobrist::keys[fromSq][piece];
-	White_Pieces ^= to;
-	Black_Pieces ^= tf;
-}
-
-U64 Board::makeWhitePawnsAttack(bitboard attacking, int diff, int depth, int attindex){
+inline U64 Board::makeWhitePawnsAttack(bitboard attacking, int diff, int depth, int attindex){
 	int toSq;
 	U64 count = 0;
 	bitboard to, from, tf, cattacks;
 	cattacks = attacking & Pieces[attindex];
 	while (cattacks!=0){
 		to = cattacks & -cattacks;
+
 		from = to >> diff;
 		tf = to | from;
 		toSq = square(to);
-		toggleCaptureWhite(attindex, PAWN, to, tf, toSq-diff, toSq);
+
+		Pieces[attindex] ^= to;
+		Pieces[PAWN] ^= tf;
+		zobr ^= zobrist::keys[toSq][PAWN] ^ zobrist::keys[toSq-diff][PAWN] ^ zobrist::keys[toSq][attindex];
+		White_Pieces ^= tf;
+		Black_Pieces ^= to;
 		addToHistory(zobr);
 
 		if (validPosition()) count += perft(depth-1);
 
 		removeLastHistoryEntry();
-		toggleCaptureWhite(attindex, PAWN, to, tf, toSq-diff, toSq);
+		Pieces[attindex] ^= to;
+		Pieces[PAWN] ^= tf;
+		zobr ^= zobrist::keys[toSq][PAWN] ^ zobrist::keys[toSq-diff][PAWN] ^ zobrist::keys[toSq][attindex];
+		White_Pieces ^= tf;
+		Black_Pieces ^= to;
+
 		cattacks &= cattacks-1;
 	}
 	return count;
 }
 
-U64 Board::makeBlackPawnsAttack(bitboard attacking, int diff, int depth, int attindex){
+inline U64 Board::makeBlackPawnsAttack(bitboard attacking, int diff, int depth, int attindex){
 	int toSq;
 	U64 count = 0;
 	bitboard to, from, tf, cattacks;
@@ -470,13 +462,23 @@ U64 Board::makeBlackPawnsAttack(bitboard attacking, int diff, int depth, int att
 		from = to << diff;
 		tf = to | from;
 		toSq = square(to);
-		toggleCaptureBlack(attindex, PAWN+black, to, tf, toSq+diff, toSq);
+		Pieces[attindex] ^= to;
+		zobr ^= zobrist::keys[toSq][attindex];
+		Pieces[PAWN+black] ^= tf;
+		zobr ^= zobrist::keys[toSq][PAWN+black] ^ zobrist::keys[toSq+diff][PAWN+black];
+		White_Pieces ^= to;
+		Black_Pieces ^= tf;
 		addToHistory(zobr);
 
 		if (validPosition()) count += perft(depth-1);
 
 		removeLastHistoryEntry();
-		toggleCaptureBlack(attindex, PAWN+black, to, tf, toSq+diff, toSq);
+		Pieces[attindex] ^= to;
+		zobr ^= zobrist::keys[toSq][attindex];
+		Pieces[PAWN+black] ^= tf;
+		zobr ^= zobrist::keys[toSq][PAWN+black] ^ zobrist::keys[toSq+diff][PAWN+black];
+		White_Pieces ^= to;
+		Black_Pieces ^= tf;
 		cattacks &= cattacks-1;
 	}
 	return count;

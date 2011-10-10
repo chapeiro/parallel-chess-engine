@@ -162,10 +162,8 @@ class Board {
 		bitboard rookMovesTo(bitboard occ, const int &sq, bitboard &notFriendly);
 
 		//pawns
-		void toggleCaptureWhite(int, int, bitboard, bitboard, int, int);
 		U64 makeWhitePawnsAttack(bitboard, int, int, int);
 		U64 makeWhitePawnsAttackbs(bitboard, bitboard, int, int);
-		void toggleCaptureBlack(int, int, bitboard, bitboard, int, int);
 		U64 makeBlackPawnsAttack(bitboard, int, int, int);
 		U64 makeBlackPawnsAttackbs(bitboard, bitboard, int, int);
 		U64 makeWhitePawnsPAttack(bitboard, int, int, int);

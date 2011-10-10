@@ -150,5 +150,4 @@ void precomputeData(){
 	out = fopen ("precompd_magics.cpp", "w");
 	MagicGenerator(maxRookBits, maxBishopBits, out);
 	fclose(out);
-	//TODO Bishop, rook moves
 }

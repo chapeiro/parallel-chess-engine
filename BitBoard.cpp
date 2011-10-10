@@ -596,6 +596,11 @@ U64 Board::perft(int depth){
 			for (i = 0 ; i <= n ; ++i) continueCapturesPerft(cpt, captured, i, p, from, att, fromSq, ally, enemy, depth, moves);
 		}
 		halfmoves = oldhm+1;
+		//normal moves of non-Pawns
+		bitboard empty = ~All_Pieces;
+		for (i = 0 ; i <= n ; ++i) {
+			continueNormalMPerft(empty, i, p, from, att, fromSq, ally, depth, moves);
+		}
 	} else {
 		togglePlaying();
 		oldcastling = castling;
@@ -694,16 +699,8 @@ U64 Board::perft(int depth){
 				castling = oldcastling;
 			}
 		}
-	}
-	//normal moves of non-Pawns
-	bitboard empty = ~All_Pieces;
-	if ((castling & castlingrights[playing^1])==0){
-		for (i = 0 ; i <= n ; ++i) {
-			continueNormalMPerft(empty, i, p, from, att, fromSq, ally, depth, moves);
-		}
-	} else {
-		oldcastling = castling;
-		ct = zobrist::castling[(castling*castlingsmagic)>>59];
+		//normal moves of non-Pawns
+		bitboard empty = ~All_Pieces;
 		for (i = 0 ; i < firstRook ; ++i)continueNormalMPerft(empty, i, p, from, att, fromSq, ally, depth, moves);
 		zobr ^= ct;
 		for (; i < firstQueen ; ++i){
@@ -749,7 +746,7 @@ U64 Board::perft(int depth){
 		// Read the message from the child process
 		ReadFile( child_output_read, buffer, sizeof(buffer), &bytes_read, NULL);
 		buffer[bytes_read] = 0;
-		int a = 0;
+		unsigned int a = 0;
 		sscanf(buffer, "Nodes: %d,", &a);
 		if (a == moves) {
 			cout << "\tOK" << endl;
