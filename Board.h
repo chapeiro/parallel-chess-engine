@@ -14,9 +14,9 @@
 #include "zobristKeys.h"
 #include "MagicsAndPrecomputedData.h"
 #include <string>
-
+#ifdef WIN32
 #include <windows.h>
-
+#endif
 //square format definitions
 #define index(x, y) (((y) << 3) + 7-(x))
 #define file(index) (7-((index)&7))
@@ -180,8 +180,10 @@ class Board {
 
 	public:
 		int dividedepth;
+#ifdef WIN32
 		HANDLE child_input_write;
 		HANDLE child_output_read;
+#endif
 		std::string pre;
 		Board(char[], char, char[], int, int, int, int);
 		void print();

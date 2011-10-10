@@ -11,8 +11,9 @@
 #include <iostream>
 //#define NDEBUG
 #include <assert.h>
-
+#ifdef WIN32
 #include <windows.h>
+#endif
 using namespace std;
 
 const string PiecesName[] = {"Pawns", "Knights", "Bishops",
@@ -732,6 +733,7 @@ int Board::perft(int depth){
 	if (playing==black) --fullmoves;
 	if (depth == dividedepth) {
 		cout << pre << getFEN() << '\t' << moves;
+#ifdef WIN32
 		DWORD bytes_read, bytes_written;
 		CHAR buffer[4096];
 		// Write a message to the child process
@@ -763,7 +765,9 @@ int Board::perft(int depth){
 			pre = oldpre;
 			dividedepth = depth;
 		}
-
+#else
+		cout << endl;
+#endif
 	}
 	return moves;
 }

@@ -199,10 +199,11 @@ int main(){
 			Board* board;
 			unsigned long long int totalMoves=0;
 			time_t totalTime=time(NULL);
+			string end = "EndOfPerft";
 			while (true) {
 				++i;
 				fscanf(perftdb, "%[^;]s", str);
-				if (strcmp(str, "EndOfPerft")==0) break;
+				if (end.compare(str)==0) break;
 				char fenBoard[71], fenEnP[3];
 				char fenCastling[] = { '-', '-', '-', '-', '\0'};
 				int fenHC, fenFM, fenEnPX, fenEnPY;
