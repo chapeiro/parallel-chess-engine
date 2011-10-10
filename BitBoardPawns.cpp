@@ -1,7 +1,7 @@
 /*
  * BitBoardPawns.cpp
  *
- *  Created on: 21 Éïõí 2011
+ *  Created on: 21 ï¿½ï¿½ï¿½ï¿½ 2011
  *      Author: Chrysogelos Periklis
  */
 
@@ -9,8 +9,8 @@
 
 using namespace std;
 
-int Board::movePawnsForward(int depth, const bitboard &notAllPieces){
-	int moves = 0;
+U64 Board::movePawnsForward(int depth, const bitboard &notAllPieces){
+	U64 moves = 0;
 	//playing has the opposite color
 	if (playing!=white){
 		bitboard moved, to, tf;
@@ -96,8 +96,8 @@ int Board::movePawnsForward(int depth, const bitboard &notAllPieces){
 	return moves;
 }
 
-int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces, const bitboard &tmpEnPassant){
-	int moves = 0;
+U64 Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces, const bitboard &tmpEnPassant){
+	U64 moves = 0;
 	if (playing!=white){
 		bitboard attr, attl, prom;
 
@@ -304,17 +304,17 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces, const b
 	return moves;
 }
 
-int Board::makeWhitePawnsAttackbs(bitboard attackingR, bitboard attackingL, int depth, int attindex){
+U64 Board::makeWhitePawnsAttackbs(bitboard attackingR, bitboard attackingL, int depth, int attindex){
 	return makeWhitePawnsAttack(attackingR, 7, depth, attindex) + makeWhitePawnsAttack(attackingL, 9, depth, attindex);
 }
 
-int Board::makeBlackPawnsAttackbs(bitboard attackingR, bitboard attackingL, int depth, int attindex){
+U64 Board::makeBlackPawnsAttackbs(bitboard attackingR, bitboard attackingL, int depth, int attindex){
 	return makeBlackPawnsAttack(attackingR, 9, depth, attindex) + makeBlackPawnsAttack(attackingL, 7, depth, attindex);
 }
 
 
-int Board::makeWhitePawnsPAttack(bitboard attackingR, int sh, int depth, int captured){
-	int moves = 0;
+U64 Board::makeWhitePawnsPAttack(bitboard attackingR, int sh, int depth, int captured){
+	U64 moves = 0;
 	int toSq;
 	bitboard to, from, tf;
 	attackingR = attackingR & Pieces[captured];
@@ -366,8 +366,8 @@ int Board::makeWhitePawnsPAttack(bitboard attackingR, int sh, int depth, int cap
 	return moves;
 }
 
-int Board::makeBlackPawnsPAttack(bitboard attackingL, int sh, int depth, int captured){
-	int moves = 0;
+U64 Board::makeBlackPawnsPAttack(bitboard attackingL, int sh, int depth, int captured){
+	U64 moves = 0;
 	int toSq;
 	bitboard to, from, tf;
 	attackingL = attackingL & Pieces[captured];
@@ -438,8 +438,9 @@ void Board::toggleCaptureBlack(int captured, int piece, bitboard to, bitboard tf
 	Black_Pieces ^= tf;
 }
 
-int Board::makeWhitePawnsAttack(bitboard attacking, int diff, int depth, int attindex){
-	int toSq, count = 0;
+U64 Board::makeWhitePawnsAttack(bitboard attacking, int diff, int depth, int attindex){
+	int toSq;
+	U64 count = 0;
 	bitboard to, from, tf, cattacks;
 	cattacks = attacking & Pieces[attindex];
 	while (cattacks!=0){
@@ -459,8 +460,9 @@ int Board::makeWhitePawnsAttack(bitboard attacking, int diff, int depth, int att
 	return count;
 }
 
-int Board::makeBlackPawnsAttack(bitboard attacking, int diff, int depth, int attindex){
-	int toSq, count = 0;
+U64 Board::makeBlackPawnsAttack(bitboard attacking, int diff, int depth, int attindex){
+	int toSq;
+	U64 count = 0;
 	bitboard to, from, tf, cattacks;
 	cattacks = attacking & Pieces[attindex];
 	while (cattacks!=0){

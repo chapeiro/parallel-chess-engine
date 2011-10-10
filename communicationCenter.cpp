@@ -187,7 +187,7 @@ int main(){
 			generateZobristKeys();
 			cout << "Finished!" << endl;
 			return 0;
-		} else if (mode.find("perft")!=string::npos){
+		} else if (mode.compare("perft")==0){
 			FILE* perftdb;
 			perftdb = fopen("PerftDatabase.perft", "r");
 			if (perftdb==NULL){
@@ -202,7 +202,7 @@ int main(){
 			string end = "EndOfPerft";
 			while (true) {
 				++i;
-				fscanf(perftdb, "%[^;]s", str);
+				fscanf(perftdb, " %[^;]s", str);
 				if (end.compare(str)==0) break;
 				char fenBoard[71], fenEnP[3];
 				char fenCastling[] = { '-', '-', '-', '-', '\0'};
@@ -220,9 +220,9 @@ int main(){
 				try {
 					board = new Board(fenBoard, fenPlaying, fenCastling, fenEnPX, fenEnPY, fenHC, fenFM);
 					cout << board->getFEN() << endl;
-					while (fgetc (perftdb)!='\n'){
+					while (fgetc(perftdb)!='\n'){
 						int depth, leafnodes;
-						fscanf(perftdb, "D%d %d", &depth, &leafnodes);
+						if (fscanf(perftdb, "D%d %d", &depth, &leafnodes)==0) break;
 						if (depth < minPerftDepth || depth > maxPerftDepth) continue;
 						int bperft = board->perft(depth);
 						totalMoves += bperft;
@@ -279,8 +279,26 @@ int main(){
 			cout << "Perft ended." << endl;
 			cout << "No errors have been found." << endl;
 			cout << "Total leaf nodes : " << totalMoves << endl;
-			cout << "Total time : " << totalTime << endl;
+			cout << "Total time : " << totalTime << "sec" << endl;
 			if (totalTime != 0) cout << "Leaf Nodes per Second : " << totalMoves / totalTime << endl;
+		} else if (mode.compare("infperft")==0){
+			Board board ((char*) "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", 'w',(char*) "KQkq", -1, -1, 0, 1);
+			int depth = 0;
+			U64 bperft;
+			U64 totalMoves = 0;
+			time_t st = time(NULL);
+			time_t et;
+			while (true){
+				et = time(NULL);
+				++depth;
+				bperft = board.perft(depth);
+				totalMoves += bperft;
+				cout << "depth :\t" << depth << "\tleaf nodes :\t" << bperft;
+				cout << "\ttotal nodes :\t" << totalMoves << "\ttotal time :\t" << time(NULL)-st;
+				et = time(NULL) - et;
+				if (et!=0) cout << "\tnode per second :\t" << (totalMoves/et);
+				cout << endl;
+			}
 		}
 	} while (true);
 	return 1;

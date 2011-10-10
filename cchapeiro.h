@@ -20,7 +20,7 @@
 #define maxBishopBits 9
 
 const int minPerftDepth = 1;
-const int maxPerftDepth = 4;
+const int maxPerftDepth = 100;
 
 extern bool debugcc;
 //#define dbgstream cout << "info string Chapeiro Debug : "
@@ -42,6 +42,7 @@ namespace chapeiro{
 	typedef unsigned long long int zobrist;
 }
 
+typedef unsigned long long int U64;
 #ifdef _WIN32
 #define formatBitboard "%#018I64Xull"
 #else

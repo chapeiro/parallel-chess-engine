@@ -460,7 +460,7 @@ bitboard Board::queenMovesTo(bitboard occ, const int &sq, bitboard &notFriendly)
 
 inline void Board::continueCapturesPerft(const bitboard &cpt, const int &captured, const int &i,
 		const int* p, const bitboard* from, const bitboard* att, const int* fromSq,
-		bitboard* &ally, bitboard* &enemy, const int &depth, int &moves){
+		bitboard* &ally, bitboard* &enemy, const int &depth, U64 &moves){
 	bitboard temp = att[i] & cpt;
 	bitboard to, ft;
 	key toggle;
@@ -491,7 +491,7 @@ inline void Board::continueCapturesPerft(const bitboard &cpt, const int &capture
 
 inline void Board::continueNormalMPerft(const bitboard &empty, const int &i,
 		const int* p, const bitboard* from, const bitboard* att, const int* fromSq,
-		bitboard* &ally, const int &depth, int &moves){
+		bitboard* &ally, const int &depth, U64 &moves){
 	bitboard temp = att[i] & empty;
 	bitboard to, ft;
 	key toggle;
@@ -514,7 +514,7 @@ inline void Board::continueNormalMPerft(const bitboard &empty, const int &i,
 	}
 }
 
-int Board::perft(int depth){
+U64 Board::perft(int depth){
 	if (depth==0) {
 		if (dividedepth == 0) cout << pre << getFEN() << endl;
 		return 1;
@@ -528,7 +528,7 @@ int Board::perft(int depth){
 	togglePlaying();
 	bitboard tmpEnPassant (enPassant);
 	enPassant = 0ull;
-	int moves = movePawnsByAttOrProm(depth, notAll_Pieces, tmpEnPassant);
+	U64 moves = movePawnsByAttOrProm(depth, notAll_Pieces, tmpEnPassant);
 	togglePlaying();
 	bitboard* enemy;
 	bitboard* ally;

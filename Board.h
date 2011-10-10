@@ -140,8 +140,8 @@ class Board {
 		void deactivateCastlingRights();
 		inline void updatePieces(int, int);
 		void capture(int);
-		int movePawnsByAttOrProm(int, const bitboard &, const bitboard &);
-		int movePawnsForward(int, const bitboard &);
+		U64 movePawnsByAttOrProm(int, const bitboard &, const bitboard &);
+		U64 movePawnsForward(int, const bitboard &);
 		void addToHistory(Zobrist);
 		void removeLastHistoryEntry();
 		bool notAttacked(const bitboard &);
@@ -163,20 +163,20 @@ class Board {
 
 		//pawns
 		void toggleCaptureWhite(int, int, bitboard, bitboard, int, int);
-		int makeWhitePawnsAttack(bitboard, int, int, int);
-		int makeWhitePawnsAttackbs(bitboard, bitboard, int, int);
+		U64 makeWhitePawnsAttack(bitboard, int, int, int);
+		U64 makeWhitePawnsAttackbs(bitboard, bitboard, int, int);
 		void toggleCaptureBlack(int, int, bitboard, bitboard, int, int);
-		int makeBlackPawnsAttack(bitboard, int, int, int);
-		int makeBlackPawnsAttackbs(bitboard, bitboard, int, int);
-		int makeWhitePawnsPAttack(bitboard, int, int, int);
-		int makeBlackPawnsPAttack(bitboard, int, int, int);
+		U64 makeBlackPawnsAttack(bitboard, int, int, int);
+		U64 makeBlackPawnsAttackbs(bitboard, bitboard, int, int);
+		U64 makeWhitePawnsPAttack(bitboard, int, int, int);
+		U64 makeBlackPawnsPAttack(bitboard, int, int, int);
 
 		void continueCapturesPerft(const bitboard &, const int &, const int &,
 				const int* , const bitboard* , const bitboard* , const int* ,
-				bitboard* &, bitboard* &, const int &, int &);
+				bitboard* &, bitboard* &, const int &, U64 &);
 		void continueNormalMPerft(const bitboard &, const int &,
 				const int*, const bitboard*, const bitboard*, const int* ,
-				bitboard* &, const int &, int &);
+				bitboard* &, const int &, U64 &);
 
 	public:
 		int dividedepth;
@@ -189,7 +189,7 @@ class Board {
 		void print();
 		std::string getFEN();
 		void make(move);
-		int perft(int depth);
+		U64 perft(int depth);
 		static move getNullMove();
 		static bool moveIsNull(move m);
 		static short convertPromotion(char);
