@@ -8,6 +8,7 @@
 #include "testCChapeiro.h"
 #include <stdio.h>
 #include "Board.h"
+#include <ctime>
 #ifdef WIN32
 #include <windows.h>
 #endif

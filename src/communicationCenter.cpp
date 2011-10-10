@@ -12,6 +12,7 @@
 #include <time.h>
 #include "testCChapeiro.h"
 #include "uciProtocol.h"
+#include <cstdio>
 using namespace std;
 bool debugcc = true;
 
@@ -38,9 +39,11 @@ void signFile(){
 
 int main(){
 	//if (debugcc) signFile();
+	char modec[256];
 	string mode;
 	do {
-		getline(cin, mode);
+		scanf("%256s", modec);//getline(cin, mode);
+		mode = modec;
 		if (mode.compare("uci")==0){
 			return uci();
 		} else if (mode.compare("xboard")==0){
