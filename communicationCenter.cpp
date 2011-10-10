@@ -11,7 +11,9 @@
 #include <string>
 #include <cstdlib>
 #include <time.h>
-
+#ifdef WIN32
+#include <windows.h>
+#endif
 typedef Board Board;
 using namespace std;
 bool debugcc = true;
@@ -114,8 +116,10 @@ int main(){
 								board.make(UCIconvertMove(m));
 							} while (!mv.eof());
 						}
-						cout << "passed"<< endl;
 						board.print();
+					//	for (int i = 1; i <= 10 ; ++i){
+							cout << 4 << '\t' << board.perft(4) << endl;
+						//}
 					} catch (int e) {
 						if (e==1) {
 							cout << "Invalid number of White Kings." << endl;
@@ -183,8 +187,102 @@ int main(){
 			generateZobristKeys();
 			cout << "Finished!" << endl;
 			return 0;
+		} else if (mode.find("perft")!=string::npos){
+			FILE* perftdb;
+			perftdb = fopen("PerftDatabase.perft", "r");
+			if (perftdb==NULL){
+				cout << "Open perfts' database failed!" << endl;
+				continue;
+			}
+			char str[1024];
+			int i = 0;
+			Board* board;
+			unsigned long long int totalMoves=0;
+			time_t totalTime=time(NULL);
+			while (true) {
+				++i;
+				fscanf(perftdb, "%[^;]s", str);
+				if (strcmp(str, "EndOfPerft")==0) break;
+				char fenBoard[71], fenEnP[3];
+				char fenCastling[] = { '-', '-', '-', '-', '\0'};
+				int fenHC, fenFM, fenEnPX, fenEnPY;
+				char fenPlaying;
+				stringstream feninput;
+				sscanf(str, "%71s %c %4s %2s %d %d", fenBoard, &fenPlaying, fenCastling, fenEnP, &fenHC, &fenFM);
+				if (fenEnP[0]=='-'){
+					fenEnPX = -1;
+					fenEnPY = -1;
+				} else {
+					fenEnPX = fenEnP[0]-'a';
+					fenEnPY = fenEnP[1]-'1';
+				}
+				try {
+					board = new Board(fenBoard, fenPlaying, fenCastling, fenEnPX, fenEnPY, fenHC, fenFM);
+					cout << board->getFEN() << endl;
+					while (fgetc (perftdb)!='\n'){
+						int depth, leafnodes;
+						fscanf(perftdb, "D%d %d", &depth, &leafnodes);
+						if (depth < minPerftDepth || depth > maxPerftDepth) continue;
+						int bperft = board->perft(depth);
+						totalMoves += bperft;
+						if (bperft == leafnodes){
+							cout << "\t depth : " << depth << "\tleaf nodes : " << bperft << endl;
+						} else {
+							cout << "\t depth : " << depth << "\tleaf nodes : " << leafnodes << "\tleaf nodes counted : " << bperft << "\tFAILED!" << endl;
+#ifdef WIN32
+							HANDLE child_input_read;
+							HANDLE child_output_write;
+							PROCESS_INFORMATION process_info;
+							STARTUPINFO startup_info;
+							SECURITY_ATTRIBUTES security_attributes;
+
+							// Set the security attributes for the pipe handles created
+							security_attributes.nLength = sizeof(SECURITY_ATTRIBUTES);
+							security_attributes.bInheritHandle = TRUE;
+							security_attributes.lpSecurityDescriptor = NULL;
+							CreatePipe(&(board->child_output_read), &child_output_write, &security_attributes, 0);
+							CreatePipe(&child_input_read, &(board->child_input_write), &security_attributes, 0);
+
+							// Create the child process
+							ZeroMemory(&process_info, sizeof(PROCESS_INFORMATION));
+							ZeroMemory(&startup_info, sizeof(STARTUPINFO));
+							startup_info.cb = sizeof(STARTUPINFO);
+							startup_info.hStdInput = child_input_read;
+							startup_info.hStdOutput = child_output_write;
+							startup_info.hStdError = child_output_write;
+							startup_info.dwFlags |= STARTF_USESTDHANDLES;
+							CreateProcess("C:\\Users\\User\\Program Files\\Chess\\Sharper\\Sharper\\Sharper.exe", NULL, NULL, NULL, TRUE, 0, NULL, "C:\\Users\\User\\Program Files\\Chess\\Sharper\\Sharper", &startup_info, &process_info);
+							DWORD bytes_written;
+							CHAR buffer[4096];
+							ReadFile( board->child_output_read, buffer, sizeof(buffer), &bytes_written, NULL);
+#endif
+							board->dividedepth = depth-1;
+							board->perft(depth);
+#ifdef WIN32
+							WriteFile((board->child_input_write), "quit\n", strlen("quit\n"), &bytes_written, NULL);
+#endif
+							return -1;
+						}
+					}
+					delete board;
+				} catch (int e) {
+					if (e==1) {
+						cout << "Invalid number of White Kings." << endl;
+					} else if (e==2) {
+						cout << "Invalid number of Black Kings." << endl;
+					}
+					cout << "test " << i << "skipped!" << endl;
+				}
+			}
+			totalTime = time(NULL) - totalTime;
+			cout << "Perft ended." << endl;
+			cout << "No errors have been found." << endl;
+			cout << "Total leaf nodes : " << totalMoves << endl;
+			cout << "Total time : " << totalTime << endl;
+			if (totalTime != 0) cout << "Leaf Nodes per Second : " << totalMoves / totalTime << endl;
 		}
 	} while (true);
+	return 1;
 }
 
 void debug(string a){

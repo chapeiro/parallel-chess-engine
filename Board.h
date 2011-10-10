@@ -15,6 +15,8 @@
 #include "MagicsAndPrecomputedData.h"
 #include <string>
 
+#include <windows.h>
+
 //square format definitions
 #define index(x, y) (((y) << 3) + 7-(x))
 #define file(index) (7-((index)&7))
@@ -91,11 +93,26 @@ const bitboard WQSCPassing = 0x0000000000000010ull;
 const bitboard BKSCPassing = 0x0400000000000000ull;
 const bitboard BQSCPassing = 0x1000000000000000ull;
 
+const bitboard WKSCKT = 0x000000000000000Aull;
+const bitboard WQSCKT = 0x0000000000000028ull;
+const bitboard BKSCKT = 0x0A00000000000000ull;
+const bitboard BQSCKT = 0x2800000000000000ull;
+
+const bitboard WKSCRT = 0x0000000000000005ull;
+const bitboard WQSCRT = 0x0000000000000090ull;
+const bitboard BKSCRT = 0x0500000000000000ull;
+const bitboard BQSCRT = 0x9000000000000000ull;
+
+const bitboard WKSCFT = 0x000000000000000Full;
+const bitboard WQSCFT = 0x00000000000000B8ull;
+const bitboard BKSCFT = 0x0F00000000000000ull;
+const bitboard BQSCFT = 0xB800000000000000ull;
+
 #include <stdio.h>
 void precomputeData();
 void MagicGenerator(int maxBitsRook, int maxBitsBishop, FILE* out);
 
-inline int square(bitboard &b){
+inline int square(const bitboard &b){
 	return magictable[(b*magic) >> 58];
 }
 
@@ -123,7 +140,7 @@ class Board {
 		void deactivateCastlingRights();
 		inline void updatePieces(int, int);
 		void capture(int);
-		int movePawnsByAttOrProm(int, const bitboard &);
+		int movePawnsByAttOrProm(int, const bitboard &, const bitboard &);
 		int movePawnsForward(int, const bitboard &);
 		void addToHistory(Zobrist);
 		void removeLastHistoryEntry();
@@ -155,13 +172,17 @@ class Board {
 		int makeBlackPawnsPAttack(bitboard, int, int, int);
 
 		void continueCapturesPerft(const bitboard &, const int &, const int &,
-				const int* , const bitboard* , const bitboard* ,
+				const int* , const bitboard* , const bitboard* , const int* ,
 				bitboard* &, bitboard* &, const int &, int &);
 		void continueNormalMPerft(const bitboard &, const int &,
-				const int*, const bitboard*, const bitboard*,
+				const int*, const bitboard*, const bitboard*, const int* ,
 				bitboard* &, const int &, int &);
 
 	public:
+		int dividedepth;
+		HANDLE child_input_write;
+		HANDLE child_output_read;
+		std::string pre;
 		Board(char[], char, char[], int, int, int, int);
 		void print();
 		std::string getFEN();

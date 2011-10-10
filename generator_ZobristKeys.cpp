@@ -21,6 +21,7 @@ key getRandomLong(vector<key> & a, CRandomMersenne & rdm){
 			return b;
 		}
 	}
+	return -1;
 }
 
 void generateZobristKeys() {

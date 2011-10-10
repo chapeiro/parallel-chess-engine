@@ -2,7 +2,7 @@
  * BitBoardPawns.cpp
  *
  *  Created on: 21 Ιουν 2011
- *      Author: User
+ *      Author: Chrysogelos Periklis
  */
 
 #include "Board.h"
@@ -96,7 +96,7 @@ int Board::movePawnsForward(int depth, const bitboard &notAllPieces){
 	return moves;
 }
 
-int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
+int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces, const bitboard &tmpEnPassant){
 	int moves = 0;
 	if (playing!=white){
 		bitboard attr, attl, prom;
@@ -118,10 +118,10 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 
 		bitboard tf;
 		int toSq;
-		if ((attr & enPassant) != 0){
-			toSq = square(enPassant);
-			tf = (enPassant >> 7) | enPassant;
-			bitboard cp = (enPassant >> 8);
+		if ((attr & tmpEnPassant) != 0){
+			toSq = square(tmpEnPassant);
+			tf = (tmpEnPassant >> 7) | tmpEnPassant;
+			bitboard cp = (tmpEnPassant >> 8);
 			Pieces[PAWN] ^= tf;
 			Pieces[PAWN+black] ^= cp;
 			Zobrist toggle = zobrist::keys[toSq][PAWN] ^
@@ -139,10 +139,10 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			White_Pieces ^= tf;
 			Black_Pieces ^= cp;
 		}
-		if ((attl & enPassant) != 0){
-			toSq = square(enPassant);
-			tf = (enPassant >> 9) | enPassant;
-			bitboard cp = (enPassant >> 8);
+		if ((attl & tmpEnPassant) != 0){
+			toSq = square(tmpEnPassant);
+			tf = (tmpEnPassant >> 9) | tmpEnPassant;
+			bitboard cp = (tmpEnPassant >> 8);
 			Pieces[PAWN] ^= tf;
 			Pieces[PAWN+black] ^= cp;
 			Zobrist toggle = zobrist::keys[toSq][PAWN] ^
@@ -217,10 +217,10 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 		}
 		bitboard tf;
 		int toSq;
-		if ((attr & enPassant) != 0){
-			toSq = square(enPassant);
-			tf = (enPassant << 9) | enPassant;
-			bitboard cp = (enPassant << 8);
+		if ((attr & tmpEnPassant) != 0){
+			toSq = square(tmpEnPassant);
+			tf = (tmpEnPassant << 9) | tmpEnPassant;
+			bitboard cp = (tmpEnPassant << 8);
 			Pieces[PAWN+black] ^= tf;
 			Pieces[PAWN] ^= cp;
 			Zobrist toggle = zobrist::keys[toSq][PAWN+black] ^
@@ -238,10 +238,10 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			White_Pieces ^= cp;
 			Black_Pieces ^= tf;
 		}
-		if ((attl & enPassant) != 0){
-			toSq = square(enPassant);
-			tf = (enPassant << 7) | enPassant;
-			bitboard cp = (enPassant << 8);
+		if ((attl & tmpEnPassant) != 0){
+			toSq = square(tmpEnPassant);
+			tf = (tmpEnPassant << 7) | tmpEnPassant;
+			bitboard cp = (tmpEnPassant << 8);
 			Pieces[PAWN+black] ^= tf;
 			Pieces[PAWN] ^= cp;
 			Zobrist toggle = zobrist::keys[toSq][PAWN+black] ^

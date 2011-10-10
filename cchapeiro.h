@@ -19,6 +19,9 @@
 #define maxRookBits 12
 #define maxBishopBits 9
 
+const int minPerftDepth = 1;
+const int maxPerftDepth = 4;
+
 extern bool debugcc;
 //#define dbgstream cout << "info string Chapeiro Debug : "
 void debug(std::string);
