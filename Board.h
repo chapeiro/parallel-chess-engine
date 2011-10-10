@@ -45,15 +45,14 @@ typedef chapeiro::zobrist Zobrist;
 
 //Pieces array & indexes definitions
 #define PAWN 0
-#define KNIGHT 1
-#define BISHOP 2
-#define ROOK 3
-#define QUEEN 4
-#define KING 5
+#define KNIGHT 2
+#define BISHOP 4
+#define ROOK 6
+#define QUEEN 8
+#define KING 10
 //#define all_w 12
 //#define all_b 13
 #define PIECESMAX 12
-#define BlackPiecesOffset 6
 #define WRONG_PIECE -10
 
 const bitboard lastRank_w = filled::rank[7];
@@ -65,11 +64,32 @@ const bitboard notlastRank_b = ~filled::rank[0];
 const bitboard pstartRank_w = filled::rank[1];
 const bitboard pstartRank_b = filled::rank[6];
 //color definitions
-#define white true
-#define black false
+const int white = 0;
+const int black = 1;
+//castling precomputed
+const bitboard WhiteKingSideC = 0x0000000000000001ull;
+const bitboard WhiteQueenSideC = 0x0000000000000080ull;
+const bitboard BlackKingSideC = 0x0100000000000000ull;
+const bitboard BlackQueenSideC = 0x8000000000000000ull;
+const bitboard castlingsmagic = 0x8100000000000081ull;
+const bitboard allcastlingrights = 0x8100000000000081ull;
+const bitboard castlingrights[2] = {0x0000000000000081ull, 0x8100000000000000ull};
+const bitboard deactcastlingrights[2] = {0xFFFFFFFFFFFFFF7Eull, 0x7EFFFFFFFFFFFFFFull};
 
-#define whiteInt 0
-#define blackInt BlackPiecesOffset
+const bitboard WhiteKingSideCSpace = 0x0000000000000006ull;
+const bitboard WhiteQueenSideCSpace = 0x0000000000000070ull;
+const bitboard BlackKingSideCSpace = 0x0600000000000000ull;
+const bitboard BlackQueenSideCSpace = 0x7000000000000000ull;
+
+const bitboard WhiteKingSideDest = 0x0000000000000002ull;
+const bitboard WhiteQueenSideDest = 0x0000000000000020ull;
+const bitboard BlackKingSideDest = 0x0200000000000000ull;
+const bitboard BlackQueenSideDest = 0x2000000000000000ull;
+
+const bitboard WKSCPassing = 0x0000000000000004ull;
+const bitboard WQSCPassing = 0x0000000000000010ull;
+const bitboard BKSCPassing = 0x0400000000000000ull;
+const bitboard BQSCPassing = 0x1000000000000000ull;
 
 #include <stdio.h>
 void precomputeData();
@@ -86,12 +106,10 @@ class Board {
 		bitboard Pieces[PIECESMAX];
 		bitboard White_Pieces, Black_Pieces;
 		bitboard enPassant;
-		int playingInt;
 		int halfmoves;
 		int fullmoves;
-		bool playing;
-		bool WhiteKingSideCastling, WhiteQueenSideCastling;
-		bool BlackKingSideCastling, BlackQueenSideCastling;
+		int playing;
+		bitboard castling;
 		Zobrist history[256];
 		int lastHistoryEntry;
 		//for debug
@@ -99,8 +117,7 @@ class Board {
 
 		//
 		inline void togglePlaying(){
-			playing = !playing;
-			playingInt ^= BlackPiecesOffset;
+			playing ^= 1;
 			zobr ^= zobrist::blackKey;
 		}
 		void deactivateCastlingRights();
@@ -110,6 +127,7 @@ class Board {
 		int movePawnsForward(int, const bitboard &);
 		void addToHistory(Zobrist);
 		void removeLastHistoryEntry();
+		bool notAttacked(const bitboard &);
 		bool validPosition();
 
 
@@ -135,6 +153,13 @@ class Board {
 		int makeBlackPawnsAttackbs(bitboard, bitboard, int, int);
 		int makeWhitePawnsPAttack(bitboard, int, int, int);
 		int makeBlackPawnsPAttack(bitboard, int, int, int);
+
+		void continueCapturesPerft(const bitboard &, const int &, const int &,
+				const int* , const bitboard* , const bitboard* ,
+				bitboard* &, bitboard* &, const int &, int &);
+		void continueNormalMPerft(const bitboard &, const int &,
+				const int*, const bitboard*, const bitboard*,
+				bitboard* &, const int &, int &);
 
 	public:
 		Board(char[], char, char[], int, int, int, int);

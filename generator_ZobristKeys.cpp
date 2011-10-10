@@ -25,7 +25,7 @@ key getRandomLong(vector<key> & a, CRandomMersenne & rdm){
 
 void generateZobristKeys() {
 	FILE * pd;
-	pd = fopen("pd_ZobristKeys.cpp", "w");
+	pd = fopen("precompd_ZobristKeys.cpp", "w");
 	char ct[20];
 	time_t rawtime;
 	time(&rawtime);
@@ -52,27 +52,51 @@ void generateZobristKeys() {
 		fprintf(pd, "\n");
 	}
 	fprintf(pd, "};\n\n");
-	fprintf(pd, "const key zobrist::enPassant[8] = {\n");
+	fprintf(pd, "const key zobrist::enPassant[8] = {\n\t");
 	for (int i = 0; i < 8; i++) {
 		fprintf(pd, formatBitboard, getRandomLong(a, rdm));
-		if (i != 7) fprintf(pd, ",");
-		fprintf(pd, "\n");
+		if (i != 7){
+			fprintf(pd, ",\n\t");
+		} else {
+			fprintf(pd, "\n");
+		}
 	}
 	fprintf(pd, "};\n\n");
 	fprintf(pd, "const key zobrist::blackKey = ");
 	fprintf(pd, formatBitboard, getRandomLong(a, rdm));
-	fprintf(pd, ";\n");
+	fprintf(pd, ";\n\n");
+	key wkc = getRandomLong(a, rdm);
+	key wqc = getRandomLong(a, rdm);
+	key bkc = getRandomLong(a, rdm);
+	key bqc = getRandomLong(a, rdm);
 	fprintf(pd, "const key zobrist::White_King_Castling = ");
-	fprintf(pd, formatBitboard, getRandomLong(a, rdm));
+	fprintf(pd, formatBitboard, wkc);
 	fprintf(pd, ";\n");
 	fprintf(pd, "const key zobrist::White_Queen_Castling = ");
-	fprintf(pd, formatBitboard, getRandomLong(a, rdm));
+	fprintf(pd, formatBitboard, wqc);
 	fprintf(pd, ";\n");
 	fprintf(pd, "const key zobrist::Black_King_Castling = ");
-	fprintf(pd, formatBitboard, getRandomLong(a, rdm));
+	fprintf(pd, formatBitboard, bkc);
 	fprintf(pd, ";\n");
 	fprintf(pd, "const key zobrist::Black_Queen_Castling = ");
-	fprintf(pd, formatBitboard, getRandomLong(a, rdm));
-	fprintf(pd, ";\n");
+	fprintf(pd, formatBitboard, bqc);
+	fprintf(pd, ";\n\n");
+	fprintf(pd, "const key zobrist::castling[16] = {\n");
+	key cr;
+	fprintf(pd, "\t0X0000000000000000ull,\n\t");
+	for (int i = 1 ; i < 16 ; ++i){
+		cr = 0;
+		if ((i&1)!=0) cr ^= wkc;
+		if ((i&2)!=0) cr ^= wqc;
+		if ((i&4)!=0) cr ^= bkc;
+		if ((i&8)!=0) cr ^= bqc;
+		fprintf(pd, formatBitboard, cr);
+		if (i != 15){
+			fprintf(pd, ",\n\t");
+		} else {
+			fprintf(pd, "\n");
+		}
+	}
+	fprintf(pd, "};\n\n");
 	fclose(pd);
 }

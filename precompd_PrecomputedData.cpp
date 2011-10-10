@@ -6,7 +6,7 @@
 #include "Board.h"
 #include "MagicsAndPrecomputedData.h"
 
-const bitboard magic = 0x0218a392cfd3576f; // the 41.
+const bitboard magic = 0x0218a392cfd3576full; // the 41.
 
 const unsigned int magictable[64] = {
 	  0,  1,  2,  7,  3, 13,  8, 19,

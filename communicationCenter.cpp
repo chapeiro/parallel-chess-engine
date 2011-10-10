@@ -14,7 +14,7 @@
 
 typedef Board Board;
 using namespace std;
-bool debugcc = false;
+bool debugcc = true;
 
 int hashSize = 1;
 
@@ -114,6 +114,7 @@ int main(){
 								board.make(UCIconvertMove(m));
 							} while (!mv.eof());
 						}
+						cout << "passed"<< endl;
 						board.print();
 					} catch (int e) {
 						if (e==1) {

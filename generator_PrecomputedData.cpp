@@ -14,7 +14,7 @@ using namespace std;
 
 void precomputeData(){
 	FILE * pd;
-	pd = fopen("pd_PrecomputedData.cpp", "w");
+	pd = fopen("precompd_PrecomputedData.cpp", "w");
 	char ct[20];
 	time_t rawtime;
 	time(&rawtime);
@@ -147,7 +147,7 @@ void precomputeData(){
 	fclose(pd);
 	cout << "Generating Magics For Rooks and Bishops..." << endl;
 	FILE * out;
-	out = fopen ("pd_magics.cpp", "w");
+	out = fopen ("precompd_magics.cpp", "w");
 	MagicGenerator(maxRookBits, maxBishopBits, out);
 	fclose(out);
 	//TODO Bishop, rook moves

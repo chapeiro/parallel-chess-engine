@@ -17,18 +17,18 @@ const string PiecesName[] = {"Pawns", "Knights", "Bishops",
 const char PiecesNameSort[] = {'P', 'N', 'B', 'R', 'Q', 'K'};
 
 inline int Board::getPieceIndex(char p){
-	if (p > 'a') return getWhitePieceIndex(p-'a'+'A')+BlackPiecesOffset;
+	if (p > 'a') return getWhitePieceIndex(p-'a'+'A') | black;
 	return getWhitePieceIndex(p);
 }
 
 inline bool Board::isPieceBlack(int pieceIndex){
-	if (pieceIndex >= BlackPiecesOffset) return true;
-	return false;
+	if ((pieceIndex&1)==white) return false;
+	return true;
 }
 
 int Board::getWhitePieceIndex(char p){
-	for (int i = 0 ; i < BlackPiecesOffset ; ++i){
-		if (p == PiecesNameSort[i]) return i;
+	for (int i = 0 ; i < (PIECESMAX>>1) ; ++i){
+		if (p == PiecesNameSort[i]) return i<<1;
 	}
 	return WRONG_PIECE;
 }
@@ -38,10 +38,7 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 	for (int i = 0 ; i < PIECESMAX ; ++i) Pieces[i] = bitboard(0);
 	White_Pieces = bitboard(0);
 	Black_Pieces = bitboard(0);
-	WhiteKingSideCastling  = false;
-	WhiteQueenSideCastling = false;
-	BlackKingSideCastling  = false;
-	BlackQueenSideCastling = false;
+	castling = 0;
 	zobr = 0;
 	lastHistoryEntry = 0;
 	int wk (0), bk(0);
@@ -60,9 +57,9 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 				x += inp-'0';
 			} else {
 				ind = getPieceIndex(inp);
-				if (ind == KING){
+				if (ind == (KING | white)){
 					++wk;
-				} else if (ind == KING+BlackPiecesOffset){
+				} else if (ind == (KING | black)){
 					++bk;
 				}
 				sq = index(x, y);
@@ -77,30 +74,28 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 	// 2. Active color
 	if (fenPlaying=='b'){
 		playing = black;
-		playingInt = blackInt;
 		zobr ^= zobrist::blackKey;
 	} else {
 		playing = white;
-		playingInt = whiteInt;
 	}
 	// 3. Castling availability
 	ind = 0;
 	while (fenCastling[ind] != '\0'){
 		switch (fenCastling[ind++]){
 		case 'K' :
-			WhiteKingSideCastling = true;
+			castling |= WhiteKingSideC;
 			zobr ^= zobrist::White_King_Castling;
 			break;
 		case 'Q' :
-			WhiteQueenSideCastling = true;
+			castling |= WhiteQueenSideC;
 			zobr ^= zobrist::White_Queen_Castling;
 			break;
 		case 'k' :
-			BlackKingSideCastling = true;
+			castling |= BlackKingSideC;
 			zobr ^= zobrist::Black_King_Castling;
 			break;
 		case 'q' :
-			BlackQueenSideCastling = true;
+			castling |= BlackQueenSideC;
 			zobr ^= zobrist::Black_Queen_Castling;
 			break;
 		}
@@ -129,7 +124,7 @@ inline void Board::updatePieces(int sq, int ind){
 	assert(ind >= 0 && ind <= 12);
 	Pieces[ind] ^= filled::normal[sq];
 	zobr ^= zobrist::keys[sq][ind];
-	if (ind >= BlackPiecesOffset){
+	if ((ind&1)==black){
 		Black_Pieces ^= filled::normal[sq];
 	} else {
 		White_Pieces ^= filled::normal[sq];
@@ -167,13 +162,13 @@ void Board::print(){
 	if (debugcc){
 		dbgstream << ndbgline << "--------------------------------\n";
 		dbgstream << ndbgline << getFEN() << '\n';
-		for (int i = 0 ; i < BlackPiecesOffset ; ++i){
-			dbgstream << ndbgline << "White " << PiecesName[i] << ": \n";
+		for (int i = white ; i < PIECESMAX ; i+=2){
+			dbgstream << ndbgline << "White " << PiecesName[i>>1] << ": \n";
 			printbb(Pieces[i]);
 		}
-		for (int i = 0 ; i < BlackPiecesOffset ; ++i){
-			dbgstream << ndbgline << "Black " << PiecesName[i] << ": \n";
-			printbb(Pieces[i+BlackPiecesOffset]);
+		for (int i = black ; i < PIECESMAX ; i+=2){
+			dbgstream << ndbgline << "Black " << PiecesName[i>>1] << ": \n";
+			printbb(Pieces[i]);
 		}
 		dbgstream << ndbgline << "Zobrist Key: " << zobr << '\n';
 		dbgstream << ndbgline << "--------------------------------" << endl;
@@ -181,37 +176,18 @@ void Board::print(){
 }
 
 void Board::deactivateCastlingRights(){
-	if (playing == white){
-		if (WhiteKingSideCastling){
-			WhiteKingSideCastling = false;
-			zobr ^= zobrist::White_King_Castling;
-		}
-		if (WhiteQueenSideCastling){
-			WhiteQueenSideCastling = false;
-			zobr ^= zobrist::White_Queen_Castling;
-		}
-	} else {
-		if (BlackKingSideCastling){
-			BlackKingSideCastling = false;
-			zobr ^= zobrist::Black_King_Castling;
-		}
-		if (BlackQueenSideCastling){
-			BlackQueenSideCastling = false;
-			zobr ^= zobrist::Black_Queen_Castling;
-		}
-	}
+	zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
+	castling &= deactcastlingrights[playing];
+	zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
 }
 
 void Board::capture(int to){
-	playingInt ^= BlackPiecesOffset;
-	for (int i = playingInt ; i < playingInt+BlackPiecesOffset ; ++i){
+	for (int i = playing^1 ; i < PIECESMAX ; i+=2){
 		if ((Pieces[i] & filled::normal[to])!=0){
 			updatePieces(to, i);
-			playingInt ^= BlackPiecesOffset;
 			return;
 		}
 	}
-	playingInt ^= BlackPiecesOffset;
 }
 /**
  * ATTENTION!: move m has to be LEGAL (or null move)
@@ -220,7 +196,7 @@ void Board::make(move m){
 	assert(!moveIsNull(m));
 	int from = index(m.fromX, m.fromY);
 	int to = index(m.toX, m.toY);
-	if ((Pieces[PAWN+playingInt] & filled::normal[from])!=0){
+	if ((Pieces[PAWN+playing] & filled::normal[from])!=0){
 		//is Pawn
 		bitboard enemy;
 		int lastRank;
@@ -233,102 +209,77 @@ void Board::make(move m){
 		}
 		if ((enemy & filled::normal[to])!=0){
 			//capture
-			updatePieces(from, playingInt+PAWN);
+			updatePieces(from, playing+PAWN);
 			if (rank(to)==lastRank){
-				updatePieces(to, m.promoteTo+playingInt);
+				updatePieces(to, m.promoteTo+playing);
 			} else {
-				updatePieces(to, playingInt+PAWN);
+				updatePieces(to, playing+PAWN);
 			}
 			capture(to);
 			enPassant = bitboard(0);
 		} else {
 			if (from-to==index(0, 0)-index(0, 1) || to-from==index(0, 0)-index(0, 1)){
 				//normal
-				updatePieces(from, playingInt+PAWN);
+				updatePieces(from, playing+PAWN);
 				if (rank(to)==lastRank){
-					updatePieces(to, m.promoteTo+playingInt);
+					updatePieces(to, m.promoteTo+playing);
 				} else {
-					updatePieces(to, playingInt+PAWN);
+					updatePieces(to, playing+PAWN);
 				}
 				enPassant = bitboard(0);
 			} else if (from-to==index(0, 0)-index(0, 2) || to-from==index(0, 0)-index(0, 2)){
 				//double
-				updatePieces(from, playingInt+PAWN);
-				updatePieces(to, playingInt+PAWN);
+				updatePieces(from, playing+PAWN);
+				updatePieces(to, playing+PAWN);
 				enPassant = filled::normal[(from+to)/2];
 				zobr ^= zobrist::enPassant[7&square( enPassant )];
 			} else {
 				//en passant
-				updatePieces(from, playingInt+PAWN);
-				updatePieces(to, playingInt+PAWN);
-				updatePieces(index(file(to), rank(from)), (playingInt^BlackPiecesOffset)+PAWN);
+				updatePieces(from, playing+PAWN);
+				updatePieces(to, playing+PAWN);
+				updatePieces(index(file(to), rank(from)), (playing^1)+PAWN);
 				enPassant = bitboard(0);
 			}
 		}
 		halfmoves = 0;
 		if (playing==black) ++fullmoves;
 		togglePlaying();
-	} else if ((Pieces[KING+playingInt] & filled::normal[from])!=0){
+	} else if ((Pieces[KING+playing] & filled::normal[from])!=0){
 		//is King
 		bool castl = false;
 		if (playing == white){
 			if (from == index('e'-'a', '1'-'1') && to == index('g'-'a', '1'-'1')){
-				updatePieces(index(7, 0), ROOK);
 				castl = true;
 			} else if (from == index('e'-'a', '1'-'1') && to == index('c'-'a', '1'-'1')){
-				updatePieces(index(0, 0), ROOK);
 				castl = true;
 			}
 		} else {
 			if (from == index('e'-'a', '8'-'1') && to == index('g'-'a', '8'-'1')){
-				updatePieces(index(7, 7), ROOK+BlackPiecesOffset);
 				castl = true;
 			} else if (from == index('e'-'a', '8'-'1') && to == index('c'-'a', '8'-'1')){
-				updatePieces(index(0, 7), ROOK+BlackPiecesOffset);
 				castl = true;
 			}
 		}
 		if (castl) {
-			updatePieces((from+to)/2, ROOK+playingInt);
+			updatePieces(from, ROOK+playing);
+			updatePieces((from+to)/2, ROOK+playing);
 		}
-		updatePieces(from, KING+playingInt);
-		updatePieces(to, KING+playingInt);
+		updatePieces(from, KING+playing);
+		updatePieces(to, KING+playing);
 		capture(to);
 		if (playing==black) ++fullmoves;
 		deactivateCastlingRights();
 		togglePlaying();
 		enPassant = bitboard(0);
 	} else {
-		for (int i = playingInt ; i < playingInt+BlackPiecesOffset ; ++i){
+		for (int i = playing ; i < PIECESMAX ; i+=2){
 			if ((Pieces[i] & filled::normal[from])!=0){
 				updatePieces(from, i);
 				updatePieces(to, i);
-				if (i-playingInt==ROOK){
-					if (playing == white){
-						if (from == index(7, 0)){
-							if (WhiteKingSideCastling){
-								WhiteKingSideCastling = false;
-								zobr ^= zobrist::White_King_Castling;
-							}
-						} else if (from == index(0, 0)){
-							if (WhiteQueenSideCastling){
-								WhiteQueenSideCastling = false;
-								zobr ^= zobrist::White_Queen_Castling;
-							}
-						}
-					} else {
-						if (from == index(7, 7)){
-							if (BlackKingSideCastling){
-								BlackKingSideCastling = false;
-								zobr ^= zobrist::Black_King_Castling;
-							}
-						} else if (from == index(0, 7)){
-							if (BlackQueenSideCastling){
-								BlackQueenSideCastling = false;
-								zobr ^= zobrist::Black_Queen_Castling;
-							}
-						}
-					}
+				if (i-playing==ROOK && (filled::normal[from] & allcastlingrights) != 0){
+						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
+						castling ^= filled::normal[from];
+						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
 				}
 				break;
 			}
@@ -371,9 +322,9 @@ string Board::getFEN(){
 					fen += count+'0';
 					count = 0;
 				}
-				for (int i = 0 ; i < BlackPiecesOffset ; ++i){
+				for (int i = white ; i < PIECESMAX ; i+=2){
 					if ((Pieces[i] & a) != 0){
-						fen += PiecesNameSort[i];
+						fen += PiecesNameSort[i>>1];
 					}
 				}
 			} else if ((Black_Pieces & a) !=0){
@@ -381,9 +332,9 @@ string Board::getFEN(){
 						fen += count+'0';
 						count = 0;
 				}
-				for (int i = 0 ; i < BlackPiecesOffset ; ++i){
-					if ((Pieces[i+BlackPiecesOffset] & a) != 0){
-						fen += PiecesNameSort[i]-'A'+'a';
+				for (int i = black ; i < PIECESMAX ; i+=2){
+					if ((Pieces[i] & a) != 0){
+						fen += PiecesNameSort[i>>1]-'A'+'a';
 					}
 				}
 			} else {
@@ -404,19 +355,19 @@ string Board::getFEN(){
 	//		"k" (Black can castle kingside) and/or
 	//		"q" (Black can castle queenside).
 	bool ncr = true;
-	if (WhiteKingSideCastling) {
+	if ((castling & WhiteKingSideC) != 0) {
 		fen += 'K';
 		ncr = false;
 	}
-	if (WhiteQueenSideCastling){
+	if ((castling & WhiteQueenSideC) != 0){
 		fen += 'Q';
 		ncr = false;
 	}
-	if (BlackKingSideCastling) {
+	if ((castling & BlackKingSideC) != 0) {
 		fen += 'k';
 		ncr = false;
 	}
-	if (BlackQueenSideCastling){
+	if ((castling & BlackQueenSideC) != 0){
 		fen += 'q';
 		ncr = false;
 	}
@@ -448,11 +399,14 @@ string Board::getFEN(){
 	// 5. Halfmove clock: This is the number of halfmoves since
 	//		the last pawn advance or capture. This is used to
 	//		determine if a draw can be claimed under the fifty-move rule.
-	fen += halfmoves + '0';
+	char num[8];
+	sprintf(num, "%d", halfmoves);
+	fen += num;
 	fen += ' ';
 	// 6. Fullmove number: The number of the full move.
 	//		It starts at 1, and is incremented after Black's move.
-	fen += fullmoves + '0';
+	sprintf(num, "%d", fullmoves);
+	fen += num;
 	return fen;
 }
 
@@ -496,16 +450,77 @@ bitboard Board::queenMovesTo(bitboard occ, const int &sq, bitboard &notFriendly)
 	return queenAttacks(occ, sq) & notFriendly;
 }
 
+inline void Board::continueCapturesPerft(const bitboard &cpt, const int &captured, const int &i,
+		const int* p, const bitboard* from, const bitboard* att,
+		bitboard* &ally, bitboard* &enemy, const int &depth, int &moves){
+	bitboard temp = att[i] & cpt;
+	bitboard to, ft;
+	key toggle;
+	int tosq;
+	while (temp != 0){
+		to = temp & -temp;
+		tosq = square(to);
+		ft = to | from[i];
+		Pieces[captured] ^= to;
+		Pieces[p[i]] ^= ft;
+		*enemy ^= to;
+		*ally ^= ft;
+		toggle = zobrist::keys[tosq][captured] ^
+				 zobrist::keys[tosq][p[i]] ^
+				 zobrist::keys[from[i]][p[i]];
+		zobr ^= toggle;
+		addToHistory(zobr);
+		if (validPosition()) moves += perft(depth-1);
+		Pieces[captured] ^= to;
+		Pieces[p[i]] ^= ft;
+		*enemy ^= to;
+		*ally ^= ft;
+		toggle = zobrist::keys[tosq][captured] ^
+				 zobrist::keys[tosq][p[i]] ^
+				 zobrist::keys[from[i]][p[i]];
+		zobr ^= toggle;
+		removeLastHistoryEntry();
+		temp &= temp-1;
+	}
+}
+
+inline void Board::continueNormalMPerft(const bitboard &empty, const int &i,
+		const int* p, const bitboard* from, const bitboard* att,
+		bitboard* &ally, const int &depth, int &moves){
+	bitboard temp = att[i] & empty;
+	bitboard to, ft;
+	key toggle;
+	int tosq;
+	while (temp != 0){
+		to = temp & -temp;
+		tosq = square(to);
+		ft = to | from[i];
+		Pieces[p[i]] ^= ft;
+		*ally ^= ft;
+		toggle = zobrist::keys[tosq][p[i]] ^ zobrist::keys[from[i]][p[i]];
+		zobr ^= toggle;
+		addToHistory(zobr);
+		if (validPosition()) moves += perft(depth-1);
+		Pieces[p[i]] ^= ft;
+		*ally ^= ft;
+		toggle = zobrist::keys[tosq][p[i]] ^ zobrist::keys[from[i]][p[i]];
+		zobr ^= toggle;
+		removeLastHistoryEntry();
+		temp &= temp-1;
+	}
+}
+
 int Board::perft(int depth){
 	if (depth==0) return 1;
-	zobr ^= zobrist::blackKey;
 	int oldhm (halfmoves);
 	halfmoves = 0;
 	if (playing==black) ++fullmoves;
 	if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
 	bitboard All_Pieces = White_Pieces | Black_Pieces;
 	bitboard notAll_Pieces = ~All_Pieces;
+	togglePlaying();
 	int moves = movePawnsByAttOrProm(depth, notAll_Pieces);
+	togglePlaying();
 	bitboard tmpEnPassant (enPassant);
 	enPassant = 0ull;
 	bitboard* enemy;
@@ -518,112 +533,129 @@ int Board::perft(int depth){
 		ally  = &Black_Pieces;
 	}
 	bitboard att[64], from[64];
-	int p[64], fromSq[64], n(0);
-	bitboard knight = Pieces[KNIGHT+playingInt];
+	int p[64], fromSq[64], n(0), firstRook(0), firstQueen(0);
+	bitboard knight = Pieces[KNIGHT+playing];
 	while (knight!=0){
 		from[n] = knight & -knight;
 		fromSq[n] = square(from[n]);
 		att[n] = KnightMoves[fromSq[n]];
-		p[n] = KNIGHT+playingInt;
+		p[n] = KNIGHT+playing;
 		++n;
 		knight &= knight-1;
 	}
-	bitboard bishop = Pieces[BISHOP+playingInt];
+	bitboard bishop = Pieces[BISHOP+playing];
 	while (bishop!=0){
 		from[n] = bishop & -bishop;
 		fromSq[n] = square(from[n]);
 		att[n] = bishopAttacks(All_Pieces, fromSq[n]);
-		p[n] = BISHOP+playingInt;
+		p[n] = BISHOP+playing;
 		++n;
 		bishop &= bishop-1;
 	}
-	bitboard rook = Pieces[ROOK+playingInt];
+	bitboard rook = Pieces[ROOK+playing];
+	firstRook = n;
 	while (rook!=0){
 		from[n] = rook & -rook;
 		fromSq[n] = square(from[n]);
 		att[n] = rookAttacks(All_Pieces, fromSq[n]);
-		p[n] = ROOK+playingInt;
+		p[n] = ROOK+playing;
 		++n;
 		rook &= rook-1;
 	}
-	bitboard queen = Pieces[QUEEN+playingInt];
+	bitboard queen = Pieces[QUEEN+playing];
+	firstQueen = n;
 	while (queen!=0){
 		from[n] = queen & -queen;
 		fromSq[n] = square(from[n]);
 		att[n] = queenAttacks(All_Pieces, fromSq[n]);
-		p[n] = QUEEN+playingInt;
+		p[n] = QUEEN+playing;
 		++n;
 		queen &= queen-1;
 	}
-	p[n] = KING+playingInt;
+	p[n] = KING+playing;
 	from[n] = Pieces[p[n]];
 	fromSq[n] = square(from[n]);
 	att[n] = KingMoves[fromSq[n]];
 	//n : position of last bitboard generated
 
 	//captures
-	const int enQ = QUEEN + (playingInt^BlackPiecesOffset);
-	const int enP = PAWN + (playingInt^BlackPiecesOffset);
-	bitboard temp, cpt, to, ft;
-	Zobrist toggle;
-	int tosq;
-	togglePlaying();
-	for (int captured = enQ ; captured >= enP ; --captured){
-		cpt = Pieces[captured];
-		for (int i = 0 ; i <= n ; ++i){
-			temp = att[i] & cpt;
-			while (temp != 0){
-				to = temp & -temp;
-				tosq = square(to);
-				ft = to | from[i];
-				Pieces[captured] ^= to;
-				Pieces[p[i]] ^= ft;
-				*enemy ^= to;
-				*ally ^= ft;
-				toggle = zobrist::keys[tosq][captured] ^
-						 zobrist::keys[tosq][p[i]] ^
-						 zobrist::keys[from[i]][p[i]];
-				zobr ^= toggle;
-				addToHistory(zobr);
-				if (validPosition()) moves += perft(depth-1);
-				Pieces[captured] ^= to;
-				Pieces[p[i]] ^= ft;
-				*enemy ^= to;
-				*ally ^= ft;
-				toggle = zobrist::keys[tosq][captured] ^
-						 zobrist::keys[tosq][p[i]] ^
-						 zobrist::keys[from[i]][p[i]];
-				zobr ^= toggle;
-				removeLastHistoryEntry();
-				temp &= temp-1;
+	bitboard cpt, oldcastling;
+	Zobrist ct, ct2;
+	int i;
+	if ((castling & castlingrights[playing])==0){
+		togglePlaying();
+		for (int captured = QUEEN | playing ; captured >= 0 ; captured-=2){ //playing == playing^1
+			cpt = Pieces[captured];
+			for (i = 0 ; i <= n ; ++i) continueCapturesPerft(cpt, captured, i, p, from, att, ally, enemy, depth, moves);
+		}
+		halfmoves = oldhm+1;
+	} else {
+		togglePlaying();
+		oldcastling = castling;
+		ct = zobrist::castling[(castling*castlingsmagic)>>59];
+		for (int captured = QUEEN | playing ; captured >= 0 ; captured-=2){ //playing == playing^1
+			cpt = Pieces[captured];
+			for (i = 0 ; i < firstRook ; ++i){
+				continueCapturesPerft(cpt, captured, i, p, from, att, ally, enemy, depth, moves);
 			}
+			zobr ^= ct;
+			for (; i < firstQueen ; ++i){
+				castling &= ~from[i];
+				ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
+				zobr ^= ct2;
+				continueCapturesPerft(cpt, captured, i, p, from, att, ally, enemy, depth, moves);
+				zobr ^= ct2;
+				castling = oldcastling;
+			}
+			zobr ^= ct;
+			for (; i < n ; ++i){
+				continueCapturesPerft(cpt, captured, i, p, from, att, ally, enemy, depth, moves);
+			}
+			castling &= deactcastlingrights[playing^1];
+			ct ^= zobrist::castling[(castling*castlingsmagic)>>59];
+			zobr ^= ct;
+			continueCapturesPerft(cpt, captured, n, p, from, att, ally, enemy, depth, moves);
+			castling = oldcastling;
+			zobr ^= ct;
+		}
+		halfmoves = oldhm+1;
+		//TODO castling
+	//WARNING! : playing has the value of the player to play after this move right now.
+		if (playing != white){
+			if ((castling&WhiteKingSideC)!=0 && (WhiteKingSideCSpace&All_Pieces)==0 && notAttacked(WKSCPassing)){
+				//TODO make castling
+				if (validPosition()) moves += perft(depth-1);
+				//TODO unmake castling
+			}
+		} else {
+
 		}
 	}
-	halfmoves = oldhm+1;
-	//TODO castling
-//WARNING! : playing has the value of the player to play after this move right now.
-
 	//normal moves of non-Pawns
 	bitboard empty = ~All_Pieces;
-	for (int i = 0 ; i <= n ; ++i){
-		temp = att[i] & empty;
-		while (temp != 0){
-			to = temp & -temp;
-			tosq = square(to);
-			ft = to | from[i];
-			Pieces[p[i]] ^= ft;
-			*ally ^= ft;
-			toggle = zobrist::keys[tosq][p[i]] ^ zobrist::keys[from[i]][p[i]];
-			zobr ^= toggle;
-			addToHistory(zobr);
-			if (validPosition()) moves += perft(depth-1);
-			Pieces[p[i]] ^= ft;
-			*ally ^= ft;
-			toggle = zobrist::keys[tosq][p[i]] ^ zobrist::keys[from[i]][p[i]];
-			zobr ^= toggle;
-			removeLastHistoryEntry();
-			temp &= temp-1;
+	if ((castling & castlingrights[playing^1])==0){
+		for (i = 0 ; i <= n ; ++i) continueNormalMPerft(empty, i, p, from, att, ally, depth, moves);
+	} else {
+		oldcastling = castling;
+		ct = zobrist::castling[(castling*castlingsmagic)>>59];
+		for (i = 0 ; i < firstRook ; ++i)continueNormalMPerft(empty, i, p, from, att, ally, depth, moves);
+		zobr ^= ct;
+		for (; i < firstQueen ; ++i){
+			castling &= ~from[i];
+			ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
+			zobr ^= ct2;
+			continueNormalMPerft(empty, i, p, from, att, ally, depth, moves);
+			zobr ^= ct2;
+			castling = oldcastling;
 		}
+		zobr ^= ct;
+		for (; i < n ; ++i) continueNormalMPerft(empty, i, p, from, att, ally, depth, moves);
+		castling &= deactcastlingrights[playing^1];
+		ct ^= zobrist::castling[(castling*castlingsmagic)>>59];
+		zobr ^= ct;
+		continueNormalMPerft(empty, i, p, from, att, ally, depth, moves);//(i==n)
+		castling = oldcastling;
+		zobr ^= ct;
 	}
 	//normal move pawns
 	halfmoves = 0;
@@ -644,7 +676,12 @@ void Board::removeLastHistoryEntry(){
 	--lastHistoryEntry;
 }
 
-bool Board::validPosition() {
-	//TODO check if the position is valid (king is not left to be captured)
+bool Board::notAttacked(const bitboard &target){
+	assert((target & (target-1))==0);
+	//TODO check if target is NOT attacked
 	return true;
+}
+
+bool Board::validPosition() {
+	return notAttacked(Pieces[KING+playing]);
 }

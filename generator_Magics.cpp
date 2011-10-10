@@ -339,7 +339,7 @@ const int BishopBits[64] = {
 		6, 5, 5, 5, 5, 5, 5, 6
 };
 
-void print(bitboard bb) {
+void printgm(bitboard bb) {
 	for (int y = 63; y >= 0; --y) {
 		cout << ((bb & (1ULL << y)) >> y);
 	}

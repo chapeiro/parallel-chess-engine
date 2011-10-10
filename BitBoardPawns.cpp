@@ -56,37 +56,37 @@ int Board::movePawnsForward(int depth, const bitboard &notAllPieces){
 		bitboard moved, to, tf;
 		int toSq;
 		key toggle;
-		moved = (Pieces[PAWN+BlackPiecesOffset] >> 8) & notlastRank_b & notAllPieces;
+		moved = (Pieces[PAWN+black] >> 8) & notlastRank_b & notAllPieces;
 		while (moved!=0){
 			to = moved & -moved;
 			tf = to | (to << 8);
 			toSq = square(to);
-			toggle = zobrist::keys[toSq][PAWN+BlackPiecesOffset] ^ zobrist::keys[toSq+8][PAWN+BlackPiecesOffset];
-			Pieces[PAWN+BlackPiecesOffset] ^= tf;
+			toggle = zobrist::keys[toSq][PAWN+black] ^ zobrist::keys[toSq+8][PAWN+black];
+			Pieces[PAWN+black] ^= tf;
 			Black_Pieces ^= tf;
 			zobr ^= toggle;
 			addToHistory(zobr);
 			if (validPosition()) moves += perft(depth - 1);
 			removeLastHistoryEntry();
-			Pieces[PAWN+BlackPiecesOffset] ^= tf;
+			Pieces[PAWN+black] ^= tf;
 			Black_Pieces ^= tf;
 			zobr ^= toggle;
 			moved &= moved - 1;
 		}
-		moved = ((((Pieces[PAWN+BlackPiecesOffset]&pstartRank_b)>>8)&notAllPieces)>>8)&notAllPieces;
+		moved = ((((Pieces[PAWN+black]&pstartRank_b)>>8)&notAllPieces)>>8)&notAllPieces;
 		while (moved!=0){
 			to = moved & -moved;
 			tf = to | (to << 16);
 			toSq = square(to);
 			enPassant = to << 8;
-			toggle = zobrist::keys[toSq][PAWN+BlackPiecesOffset] ^ zobrist::keys[toSq+8][PAWN+BlackPiecesOffset] ^ zobrist::enPassant[7&square( enPassant )];
-			Pieces[PAWN+BlackPiecesOffset] ^= tf;
+			toggle = zobrist::keys[toSq][PAWN+black] ^ zobrist::keys[toSq+8][PAWN+black] ^ zobrist::enPassant[7&square( enPassant )];
+			Pieces[PAWN+black] ^= tf;
 			Black_Pieces ^= tf;
 			zobr ^= toggle;
 			addToHistory(zobr);
 			if (validPosition()) moves += perft(depth - 1);
 			removeLastHistoryEntry();
-			Pieces[PAWN+BlackPiecesOffset] ^= tf;
+			Pieces[PAWN+black] ^= tf;
 			Black_Pieces ^= tf;
 			zobr ^= toggle;
 			moved &= moved - 1;
@@ -98,13 +98,13 @@ int Board::movePawnsForward(int depth, const bitboard &notAllPieces){
 
 int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 	int moves = 0;
-	if (playing==white){
+	if (playing!=white){
 		bitboard attr, attl, prom;
 
 		attr = notfile0 & lastRank_w & (Pieces[PAWN] << 7);
 		//&enemy is tested later
 		attl = notfile7 & lastRank_w & (Pieces[PAWN] << 9);
-		for (int captured = QUEEN + BlackPiecesOffset; captured >= BlackPiecesOffset ; --captured){
+		for (int captured = QUEEN + black; captured >= 0 ; captured-=2){
 			moves += makeWhitePawnsPAttack(attr, 7, depth, captured);
 			moves += makeWhitePawnsPAttack(attl, 9, depth, captured);
 		}
@@ -112,7 +112,7 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 		attr = notfile0 & notlastRank_w & (Pieces[PAWN] << 7);
 		//&enemy is tested later
 		attl = notfile7 & notlastRank_w & (Pieces[PAWN] << 9);
-		for (int i = QUEEN + BlackPiecesOffset; i >= BlackPiecesOffset ; --i){
+		for (int i = QUEEN + black; i >= 0 ; i-=2){
 			moves += makeWhitePawnsAttackbs(attr, attl, depth, i);
 		}
 
@@ -123,10 +123,10 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			tf = (enPassant >> 7) | enPassant;
 			bitboard cp = (enPassant >> 8);
 			Pieces[PAWN] ^= tf;
-			Pieces[PAWN+BlackPiecesOffset] ^= cp;
+			Pieces[PAWN+black] ^= cp;
 			Zobrist toggle = zobrist::keys[toSq][PAWN] ^
 					zobrist::keys[toSq-7][PAWN] ^
-					zobrist::keys[toSq-8][PAWN+BlackPiecesOffset];
+					zobrist::keys[toSq-8][PAWN+black];
 			zobr ^= toggle;
 			White_Pieces ^= tf;
 			Black_Pieces ^= cp;
@@ -134,7 +134,7 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			if (validPosition()) moves += perft(depth-1);
 			removeLastHistoryEntry();
 			Pieces[PAWN] ^= tf;
-			Pieces[PAWN+BlackPiecesOffset] ^= cp;
+			Pieces[PAWN+black] ^= cp;
 			zobr ^= toggle;
 			White_Pieces ^= tf;
 			Black_Pieces ^= cp;
@@ -144,10 +144,10 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			tf = (enPassant >> 9) | enPassant;
 			bitboard cp = (enPassant >> 8);
 			Pieces[PAWN] ^= tf;
-			Pieces[PAWN+BlackPiecesOffset] ^= cp;
+			Pieces[PAWN+black] ^= cp;
 			Zobrist toggle = zobrist::keys[toSq][PAWN] ^
 					zobrist::keys[toSq-9][PAWN] ^
-					zobrist::keys[toSq-8][PAWN+BlackPiecesOffset];
+					zobrist::keys[toSq-8][PAWN+black];
 			zobr ^= toggle;
 			White_Pieces ^= tf;
 			Black_Pieces ^= cp;
@@ -155,7 +155,7 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			if (validPosition()) moves += perft(depth-1);
 			removeLastHistoryEntry();
 			Pieces[PAWN] ^= tf;
-			Pieces[PAWN+BlackPiecesOffset] ^= cp;
+			Pieces[PAWN+black] ^= cp;
 			zobr ^= toggle;
 			White_Pieces ^= tf;
 			Black_Pieces ^= cp;
@@ -171,7 +171,6 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			Pieces[QUEEN] |= to;
 			zobr ^= zobrist::keys[toSq][QUEEN] ^ zobrist::keys[toSq-8][PAWN];
 			White_Pieces ^= tf;
-			togglePlaying();
 			addToHistory(zobr);
 			if (validPosition()) {
 				moves += perft(depth - 1);
@@ -200,21 +199,20 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			Pieces[PAWN] ^= from;
 			zobr ^= zobrist::keys[toSq-8][PAWN];
 			White_Pieces ^= tf;
-			togglePlaying();
 			prom &= prom - 1;
 		}
 	} else {
 		bitboard attr, attl, prom;
-		attr = notfile0 & lastRank_b & (Pieces[PAWN+BlackPiecesOffset] >> 9);
+		attr = notfile0 & lastRank_b & (Pieces[PAWN+black] >> 9);
 		//&enemy is tested later
-		attl = notfile7 & lastRank_b & (Pieces[PAWN+BlackPiecesOffset] >> 7);
-		for (int captured = QUEEN; captured >= 0 ; --captured){
+		attl = notfile7 & lastRank_b & (Pieces[PAWN+black] >> 7);
+		for (int captured = QUEEN; captured >= 0 ; captured-=2){
 			moves += makeBlackPawnsPAttack(attr, 9, depth, captured);
 			moves += makeBlackPawnsPAttack(attl, 7, depth, captured);
 		}
-		attr = notfile0 & notlastRank_b & (Pieces[PAWN+BlackPiecesOffset] >> 9);
-		attl = notfile7 & notlastRank_b & (Pieces[PAWN+BlackPiecesOffset] >> 7);
-		for (int i = QUEEN; i >= 0 ; --i){
+		attr = notfile0 & notlastRank_b & (Pieces[PAWN+black] >> 9);
+		attl = notfile7 & notlastRank_b & (Pieces[PAWN+black] >> 7);
+		for (int i = QUEEN; i >= 0 ; i-=2){
 			moves += makeBlackPawnsAttackbs(attr, attl, depth, i);
 		}
 		bitboard tf;
@@ -223,10 +221,10 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			toSq = square(enPassant);
 			tf = (enPassant << 9) | enPassant;
 			bitboard cp = (enPassant << 8);
-			Pieces[PAWN+BlackPiecesOffset] ^= tf;
+			Pieces[PAWN+black] ^= tf;
 			Pieces[PAWN] ^= cp;
-			Zobrist toggle = zobrist::keys[toSq][PAWN+BlackPiecesOffset] ^
-					zobrist::keys[toSq+9][PAWN+BlackPiecesOffset] ^
+			Zobrist toggle = zobrist::keys[toSq][PAWN+black] ^
+					zobrist::keys[toSq+9][PAWN+black] ^
 					zobrist::keys[toSq+8][PAWN];
 			zobr ^= toggle;
 			White_Pieces ^= cp;
@@ -234,7 +232,7 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			addToHistory(zobr);
 			if (validPosition()) moves += perft(depth-1);
 			removeLastHistoryEntry();
-			Pieces[PAWN+BlackPiecesOffset] ^= tf;
+			Pieces[PAWN+black] ^= tf;
 			Pieces[PAWN] ^= cp;
 			zobr ^= toggle;
 			White_Pieces ^= cp;
@@ -244,10 +242,10 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			toSq = square(enPassant);
 			tf = (enPassant << 7) | enPassant;
 			bitboard cp = (enPassant << 8);
-			Pieces[PAWN+BlackPiecesOffset] ^= tf;
+			Pieces[PAWN+black] ^= tf;
 			Pieces[PAWN] ^= cp;
-			Zobrist toggle = zobrist::keys[toSq][PAWN+BlackPiecesOffset] ^
-					zobrist::keys[toSq+7][PAWN+BlackPiecesOffset] ^
+			Zobrist toggle = zobrist::keys[toSq][PAWN+black] ^
+					zobrist::keys[toSq+7][PAWN+black] ^
 					zobrist::keys[toSq+8][PAWN];
 			zobr ^= toggle;
 			White_Pieces ^= cp;
@@ -255,53 +253,51 @@ int Board::movePawnsByAttOrProm(int depth, const bitboard &notAllPieces){
 			addToHistory(zobr);
 			if (validPosition()) moves += perft(depth-1);
 			removeLastHistoryEntry();
-			Pieces[PAWN+BlackPiecesOffset] ^= tf;
+			Pieces[PAWN+black] ^= tf;
 			Pieces[PAWN] ^= cp;
 			zobr ^= toggle;
 			White_Pieces ^= cp;
 			Black_Pieces ^= tf;
 		}
-		prom = (Pieces[PAWN+BlackPiecesOffset] >> 8) & lastRank_b & notAllPieces;
+		prom = (Pieces[PAWN+black] >> 8) & lastRank_b & notAllPieces;
 		bitboard to, from;
 		while (prom!=0){
 			to = prom & -prom;
 			from = to << 8;
 			tf = to | from;
 			toSq = square(to);
-			Pieces[PAWN+BlackPiecesOffset] ^= from;
-			Pieces[QUEEN+BlackPiecesOffset] |= to;
-			zobr ^= zobrist::keys[toSq][QUEEN+BlackPiecesOffset] ^ zobrist::keys[toSq+8][PAWN+BlackPiecesOffset];
+			Pieces[PAWN+black] ^= from;
+			Pieces[QUEEN+black] |= to;
+			zobr ^= zobrist::keys[toSq][QUEEN+black] ^ zobrist::keys[toSq+8][PAWN+black];
 			Black_Pieces ^= tf;
-			togglePlaying();
 			addToHistory(zobr);
 			if (validPosition()) {
 				moves += perft(depth - 1);
-				Pieces[QUEEN+BlackPiecesOffset] ^= to;
-				zobr ^= zobrist::keys[toSq][QUEEN+BlackPiecesOffset];
-				Pieces[ROOK+BlackPiecesOffset] ^= to;
-				zobr ^= zobrist::keys[toSq][ROOK+BlackPiecesOffset];
+				Pieces[QUEEN+black] ^= to;
+				zobr ^= zobrist::keys[toSq][QUEEN+black];
+				Pieces[ROOK+black] ^= to;
+				zobr ^= zobrist::keys[toSq][ROOK+black];
 				moves += perft(depth - 1);
-				Pieces[ROOK+BlackPiecesOffset] ^= to;
-				zobr ^= zobrist::keys[toSq][ROOK+BlackPiecesOffset];
-				Pieces[BISHOP+BlackPiecesOffset] ^= to;
-				zobr ^= zobrist::keys[toSq][BISHOP+BlackPiecesOffset];
+				Pieces[ROOK+black] ^= to;
+				zobr ^= zobrist::keys[toSq][ROOK+black];
+				Pieces[BISHOP+black] ^= to;
+				zobr ^= zobrist::keys[toSq][BISHOP+black];
 				moves += perft(depth - 1);
-				Pieces[BISHOP+BlackPiecesOffset] ^= to;
-				zobr ^= zobrist::keys[toSq][BISHOP+BlackPiecesOffset];
-				Pieces[KNIGHT+BlackPiecesOffset] ^= to;
-				zobr ^= zobrist::keys[toSq][KNIGHT+BlackPiecesOffset];
+				Pieces[BISHOP+black] ^= to;
+				zobr ^= zobrist::keys[toSq][BISHOP+black];
+				Pieces[KNIGHT+black] ^= to;
+				zobr ^= zobrist::keys[toSq][KNIGHT+black];
 				moves += perft(depth - 1);
-				Pieces[KNIGHT+BlackPiecesOffset] ^= to;
-				zobr ^= zobrist::keys[toSq][KNIGHT+BlackPiecesOffset];
+				Pieces[KNIGHT+black] ^= to;
+				zobr ^= zobrist::keys[toSq][KNIGHT+black];
 			} else {
-				Pieces[QUEEN+BlackPiecesOffset] ^= to;
-				zobr ^= zobrist::keys[toSq][QUEEN+BlackPiecesOffset];
+				Pieces[QUEEN+black] ^= to;
+				zobr ^= zobrist::keys[toSq][QUEEN+black];
 			}
 			removeLastHistoryEntry();
-			Pieces[PAWN+BlackPiecesOffset] ^= from;
-			zobr ^= zobrist::keys[toSq+8][PAWN+BlackPiecesOffset];
+			Pieces[PAWN+black] ^= from;
+			zobr ^= zobrist::keys[toSq+8][PAWN+black];
 			Black_Pieces ^= tf;
-			togglePlaying();
 			prom &= prom - 1;
 		}
 	}
@@ -334,7 +330,6 @@ int Board::makeWhitePawnsPAttack(bitboard attackingR, int sh, int depth, int cap
 		zobr ^= zobrist::keys[toSq][QUEEN] ^ zobrist::keys[toSq-sh][PAWN];
 		White_Pieces ^= tf;
 		Black_Pieces ^= to;
-		togglePlaying();
 		addToHistory( zobr);
 		if (validPosition()) {
 			moves += perft(depth - 1);
@@ -366,7 +361,6 @@ int Board::makeWhitePawnsPAttack(bitboard attackingR, int sh, int depth, int cap
 		zobr ^= zobrist::keys[toSq-sh][PAWN];
 		White_Pieces ^= tf;
 		Black_Pieces ^= to;
-		togglePlaying();
 		attackingR &= attackingR - 1;
 	}
 	return moves;
@@ -384,44 +378,42 @@ int Board::makeBlackPawnsPAttack(bitboard attackingL, int sh, int depth, int cap
 		toSq = square(to);
 		Pieces[captured] ^= to;
 		zobr ^= zobrist::keys[toSq][captured];
-		Pieces[PAWN+BlackPiecesOffset] ^= from;
-		Pieces[QUEEN+BlackPiecesOffset] |= to;
-		zobr ^= zobrist::keys[toSq][QUEEN+BlackPiecesOffset] ^ zobrist::keys[toSq+sh][PAWN+BlackPiecesOffset];
+		Pieces[PAWN+black] ^= from;
+		Pieces[QUEEN+black] |= to;
+		zobr ^= zobrist::keys[toSq][QUEEN+black] ^ zobrist::keys[toSq+sh][PAWN+black];
 		Black_Pieces ^= tf;
 		White_Pieces ^= to;
-		togglePlaying();
 		addToHistory( zobr);
 		if (validPosition()) {
 			moves += perft(depth - 1);
-			Pieces[QUEEN+BlackPiecesOffset] ^= to;
-			zobr ^= zobrist::keys[toSq][QUEEN+BlackPiecesOffset];
-			Pieces[ROOK+BlackPiecesOffset] ^= to;
-			zobr ^= zobrist::keys[toSq][ROOK+BlackPiecesOffset];
+			Pieces[QUEEN+black] ^= to;
+			zobr ^= zobrist::keys[toSq][QUEEN+black];
+			Pieces[ROOK+black] ^= to;
+			zobr ^= zobrist::keys[toSq][ROOK+black];
 			moves += perft(depth - 1);
-			Pieces[ROOK+BlackPiecesOffset] ^= to;
-			zobr ^= zobrist::keys[toSq][ROOK+BlackPiecesOffset];
-			Pieces[BISHOP+BlackPiecesOffset] ^= to;
-			zobr ^= zobrist::keys[toSq][BISHOP+BlackPiecesOffset];
+			Pieces[ROOK+black] ^= to;
+			zobr ^= zobrist::keys[toSq][ROOK+black];
+			Pieces[BISHOP+black] ^= to;
+			zobr ^= zobrist::keys[toSq][BISHOP+black];
 			moves += perft(depth - 1);
-			Pieces[BISHOP+BlackPiecesOffset] ^= to;
-			zobr ^= zobrist::keys[toSq][BISHOP+BlackPiecesOffset];
-			Pieces[KNIGHT+BlackPiecesOffset] ^= to;
-			zobr ^= zobrist::keys[toSq][KNIGHT+BlackPiecesOffset];
+			Pieces[BISHOP+black] ^= to;
+			zobr ^= zobrist::keys[toSq][BISHOP+black];
+			Pieces[KNIGHT+black] ^= to;
+			zobr ^= zobrist::keys[toSq][KNIGHT+black];
 			moves += perft(depth - 1);
-			Pieces[KNIGHT+BlackPiecesOffset] ^= to;
-			zobr ^= zobrist::keys[toSq][KNIGHT+BlackPiecesOffset];
+			Pieces[KNIGHT+black] ^= to;
+			zobr ^= zobrist::keys[toSq][KNIGHT+black];
 		} else {
-			Pieces[QUEEN+BlackPiecesOffset] ^= to;
-			zobr ^= zobrist::keys[toSq][QUEEN+BlackPiecesOffset];
+			Pieces[QUEEN+black] ^= to;
+			zobr ^= zobrist::keys[toSq][QUEEN+black];
 		}
 		removeLastHistoryEntry();
 		Pieces[captured] ^= to;
 		zobr ^= zobrist::keys[toSq][captured];
-		Pieces[PAWN+BlackPiecesOffset] ^= from;
-		zobr ^= zobrist::keys[toSq+sh][PAWN+BlackPiecesOffset];
+		Pieces[PAWN+black] ^= from;
+		zobr ^= zobrist::keys[toSq+sh][PAWN+black];
 		Black_Pieces ^= tf;
 		White_Pieces ^= to;
-		togglePlaying();
 		attackingL &= attackingL - 1;
 	}
 	return moves;
@@ -435,7 +427,6 @@ void Board::toggleCaptureWhite(int captured, int piece, bitboard to, bitboard tf
 	zobr ^= zobrist::keys[toSq][piece] ^ zobrist::keys[fromSq][piece];
 	White_Pieces ^= tf;
 	Black_Pieces ^= to;
-	togglePlaying();
 }
 
 void Board::toggleCaptureBlack(int captured, int piece, bitboard to, bitboard tf, int fromSq, int toSq){
@@ -445,7 +436,6 @@ void Board::toggleCaptureBlack(int captured, int piece, bitboard to, bitboard tf
 	zobr ^= zobrist::keys[toSq][piece] ^ zobrist::keys[fromSq][piece];
 	White_Pieces ^= to;
 	Black_Pieces ^= tf;
-	togglePlaying();
 }
 
 int Board::makeWhitePawnsAttack(bitboard attacking, int diff, int depth, int attindex){
@@ -478,13 +468,13 @@ int Board::makeBlackPawnsAttack(bitboard attacking, int diff, int depth, int att
 		from = to << diff;
 		tf = to | from;
 		toSq = square(to);
-		toggleCaptureBlack(attindex, PAWN+BlackPiecesOffset, to, tf, toSq+diff, toSq);
+		toggleCaptureBlack(attindex, PAWN+black, to, tf, toSq+diff, toSq);
 		addToHistory(zobr);
 
 		if (validPosition()) count += perft(depth-1);
 
 		removeLastHistoryEntry();
-		toggleCaptureBlack(attindex, PAWN+BlackPiecesOffset, to, tf, toSq+diff, toSq);
+		toggleCaptureBlack(attindex, PAWN+black, to, tf, toSq+diff, toSq);
 		cattacks &= cattacks-1;
 	}
 	return count;
