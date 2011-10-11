@@ -20,7 +20,7 @@
 //#define NDEBUG
 #include <assert.h>
 #include <exception>
-#ifdef WIN32
+#ifdef DIVIDEPERFT
 #include <windows.h>
 #endif
 
@@ -127,7 +127,7 @@ class Board {
 		U64 horizonNodes;
 		U64 nodes;
 		int dividedepth;
-#ifdef WIN32
+#ifdef DIVIDEPERFT
 		HANDLE child_input_write;
 		HANDLE child_output_read;
 #endif
@@ -1714,7 +1714,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		int oldplaying = playing;
 		playing = color;
 		//std::cout << pre << getFEN() << '\t' << moves;
-#ifdef WIN32
+#if DIVIDEPERFT
 		DWORD bytes_read, bytes_written;
 		CHAR buffer[4096];
 		// Write a message to the child process

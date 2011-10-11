@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include "Board.h"
 #include <ctime>
-#ifdef WIN32
+#ifdef DIVIDEPERFT
 #include <windows.h>
 #endif
 using namespace std;
@@ -36,7 +36,11 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 		cout << board->getFEN() << endl;
 		input.erase(0, c);
 		unsigned long long int result, solution;
+#ifdef _WIN32
+		while (sscanf(input.c_str(), " D%d %I64u;%n", &a, &solution, &c) >= 2){
+#else
 		while (sscanf(input.c_str(), " D%d %llu;%n", &a, &solution, &c) >= 2){
+#endif
 			input.erase(0, c);
 			if (a < mindepth || a > maxdepth) continue;
 			cout << "\tDepth : \t" << a << "\tLeaf Nodes : \t" << solution;
@@ -50,7 +54,7 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 				cout << "\t\t\tOK\n";
 			} else {
 				cout << "\tCounted : \t" << result << "\tFailed!" << endl;
-#ifdef WIN32
+#ifdef DIVIDEPERFT
 				HANDLE child_input_read;
 				HANDLE child_output_write;
 				PROCESS_INFORMATION process_info;
@@ -80,7 +84,7 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 				board->dividedepth = a - 1;
 				board->pre = "";
 				board->perft(a);
-#ifdef WIN32
+#ifdef DIVIDEPERFT
 				WriteFile((board->child_input_write), "quit\n", strlen("quit\n"), &bytes_written, NULL);
 #endif
 				delete board;
