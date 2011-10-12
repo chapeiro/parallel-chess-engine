@@ -16,7 +16,7 @@ move getNullMove(){
 }
 
 move convertUCImove(char m[6]){
-	if (m=="0000"){
+	if (m[0]=='0'){ //0000
 		return getNullMove();
 	}
 	move ret;
