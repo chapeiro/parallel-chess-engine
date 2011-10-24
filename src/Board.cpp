@@ -318,25 +318,26 @@ std::string Board::getFEN(){
 	fen += ( playing==white ? 'w' : 'b' );
 	fen += ' ';
 	//	3. Castling availability. If neither side can castle,
-	//		this is "�". Otherwise, this has one or more letters:
+	//		this is "-". Otherwise, this has one or more letters:
 	//		"K" (White can castle kingside),
 	//		"Q" (White can castle queenside),
 	//		"k" (Black can castle kingside) and/or
 	//		"q" (Black can castle queenside).
 	bool ncr = true;
-	if ((castling & castlingc<white>::KingSide) != 0) {
+	//TODO reconsider & Pieces[ROOK | color]
+	if ((castling & castlingc<white>::KingSide & Pieces[ROOK | white]) != 0) {
 		fen += 'K';
 		ncr = false;
 	}
-	if ((castling & castlingc<white>::QueenSide) != 0){
+	if ((castling & castlingc<white>::QueenSide & Pieces[ROOK | white]) != 0){
 		fen += 'Q';
 		ncr = false;
 	}
-	if ((castling & castlingc<black>::KingSide) != 0) {
+	if ((castling & castlingc<black>::KingSide & Pieces[ROOK | black]) != 0) {
 		fen += 'k';
 		ncr = false;
 	}
-	if ((castling & castlingc<black>::QueenSide) != 0){
+	if ((castling & castlingc<black>::QueenSide & Pieces[ROOK | black]) != 0){
 		fen += 'q';
 		ncr = false;
 	}
@@ -396,18 +397,6 @@ void Board::print(){
 		}
 		std::cout << ndbgline << "Zobrist Key: " << zobr << '\n';
 		std::cout << ndbgline << "--------------------------------" << std::endl;
-	}
-}
-
-void Board::printbb(bitboard bb){
-	int i;
-	for (int y = 7 ; y >= 0 ; --y){
-		std::cout << ndbgline;
-		for (int x = 0 ; x < 8 ; ++x){
-			i = index(x, y);
-			std::cout << ((bb & filled::normal[i]) >> i);
-		}
-		std::cout << '\n';
 	}
 }
 

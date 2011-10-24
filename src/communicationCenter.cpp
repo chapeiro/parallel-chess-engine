@@ -42,7 +42,7 @@ int main(){
 	char modec[256];
 	string mode;
 	do {
-		scanf("%256s", modec);//getline(cin, mode);
+		scanf(" %256[^\n]s\n", modec);//getline(cin, mode);
 		mode = modec;
 		if (mode.compare("uci")==0){
 			return uci();
@@ -126,6 +126,12 @@ int main(){
 				if (pvtestInterface(mode, totalTime, totalNodes, totalLeafNodes)){
 					cout << "Leaf Nodes : \t" << totalNodes << "\t(time : \t" << totalTime << "\tsec)" << endl;
 				}
+			}
+		} else if (mode.compare("Is 64bit compiled") == 0){
+			if (sizeof(int *) == 4){
+				cout << "No" << endl;
+			} else {
+				cout << "Yes" << endl;
 			}
 		}
 	} while (true);

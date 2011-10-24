@@ -10,14 +10,11 @@
 #include <stdlib.h>
 #include <time.h>
 #include "cchapeiro.h"
+#include "SquareMapping.h"
 //#define bf
 
 using namespace std;
 typedef chapeiro::bitboard bitboard;
-
-#define index(x, y) (((y) << 3) + 7-(x))
-#define file(index) (7-((index)&7))
-#define rank(index) ((index) >> 3)
 
 bitboard leftOccluded(bitboard gen, bitboard pro) {
 	pro &= 0XFEFEFEFEFEFEFEFEULL; // make H-File all occupied, to consider A-H-wraps after shift
@@ -304,17 +301,6 @@ bitboard generateMagics(int index, int bits, bool rook) {
 		}
 	} while (fail);
 	return magic;
-}
-
-void printbb(bitboard bb) {
-	int i;
-	for (int y = 7; y >= 0; --y) {
-		for (int x = 0; x < 8; ++x) {
-			i = index(x, y);
-			cout << ((bb & (1ULL << i)) >> i);
-		}
-		cout << '\n';
-	}
 }
 
 const int RookBits[64] = {

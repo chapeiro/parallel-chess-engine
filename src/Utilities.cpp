@@ -44,7 +44,7 @@ private:
       int index[64], i;
       for (i=0; i<64; i++) // init magic array
          index[ (deBruijn<<i) >> (64-6) ] = i;
-      fprintf(pd, "const bitboard magic = 0x%08x%08x; // the %d.\n\n",
+      fprintf(pd, "const bitboard magic = 0x%08x%08xull; // the %d.\n\n",
               (int)(deBruijn>>32), (int)(deBruijn), m_dBCount);
       fprintf(pd, "const unsigned int magictable[64] = {");
       for (i=0; i<64; i++) {

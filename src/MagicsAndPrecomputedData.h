@@ -39,4 +39,5 @@ extern const int BishopShift[64];
 #endif
 extern const bitboard RookAttacks[64][4096];
 extern const bitboard BishopAttacks[64][512];
+extern const bitboard rays[64][64];
 #endif /* MAGICSANDPRECOMPUTEDDATA_H_ */

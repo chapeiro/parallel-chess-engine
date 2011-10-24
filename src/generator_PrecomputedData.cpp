@@ -110,7 +110,7 @@ void precomputeData(){
 		}
 	}
 	fprintf(pd, "\n};\n\n");
-	bitboard KnightMoves[64], KingMoves[64];
+	bitboard KnightMoves[64], KingMoves[64], rays[64][64];
 	for (int i = 0 ; i < 64 ; ++i){
 		bitboard b = bitboard(1) << i;
 		KnightMoves[i] = (
@@ -145,6 +145,55 @@ void precomputeData(){
 		}
 	}
 	fprintf(pd, "\n};\n");
+	std::cout << ndbgline << "Generating Rays..." << endl;
+	bitboard b, a1;
+	for (int i = 0 ; i < 64 ; ++i){
+		rays[i][i] = 0;
+		for (int j = i + 1 ; j < 64 ; ++j){
+			if (rank(i) == rank(j)){
+				rays[i][j] = rays[j][i] = (1ull << j) - (1ull << (i + 1));
+			} else if (file(i) == file(j)){
+				rays[i][j] = rays[j][i] = ffile[file(i)] & ((1ull << j) - (1ull << (i + 1)));
+			} else if (rank(i) + file(i) == rank(j) + file(j)){
+				a1 = 1ull << (i + 9);
+				b = 1ull << j;
+				rays[j][i] = 0;
+				while (a1 < b){
+					rays[j][i] |= a1;
+					a1 <<= 9;
+				}
+				rays[i][j] = rays[j][i];
+			} else if (rank(i) - file(i) == rank(j) - file(j)){
+				a1 = 1ull << (i + 7);
+				b = 1ull << j;
+				rays[j][i] = 0;
+				while (a1 < b){
+					rays[j][i] |= a1;
+					a1 <<= 7;
+				}
+				rays[i][j] = rays[j][i];
+			} else {
+				rays[j][i] = rays[i][j] = 0;
+			}
+		}
+	}
+	fprintf(pd, "const bitboard rays[64][64] = {\n#define _____________________ 0ULL\n\t");
+	for (int i = 0 ; i < 64 ; ++i){
+		fprintf(pd, "{\n\t\t");
+		for (int j = 0 ; j < 64 ; ++j){
+			if (rays[i][j] != 0){
+				fprintf(pd, formatBitboard, rays[i][j]);
+			} else {
+				fprintf(pd, "_____________________");
+			}
+			if (j != 63) {
+				fprintf(pd, ", ");
+				if ((j&7)==7) fprintf(pd, "\n\t\t");
+			}
+		}
+		if (i != 63) fprintf(pd, "\n\t},\n\t");
+	}
+	fprintf(pd, "\n\t}\n};");
 	fclose(pd);
 	std::cout << ndbgline << "Generating Magics For Rooks and Bishops..." << endl;
 	FILE * out;

@@ -25,4 +25,16 @@ inline int square(const bitboard &b){
 	return magictable[(b*magic) >> 58];
 }
 
+inline void printbb(bitboard bb){
+	int i;
+	for (int y = 7 ; y >= 0 ; --y){
+		std::cout << ndbgline;
+		for (int x = 0 ; x < 8 ; ++x){
+			i = index(x, y);
+			std::cout << ((bb >> i) & 1);
+		}
+		std::cout << '\n';
+	}
+}
+
 #endif /* SQUAREMAPPING_H_ */

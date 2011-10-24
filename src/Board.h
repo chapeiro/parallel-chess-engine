@@ -17,7 +17,7 @@
 #include "MoveEncoding.h"
 #include <string>
 #include "Values.h"
-//#define NDEBUG
+#define NDEBUG
 #include <assert.h>
 #include <exception>
 #ifdef DIVIDEPERFT
@@ -144,7 +144,6 @@ class Board {
 
 		//for debug
 		std::string getFEN();
-		void printbb(bitboard);
 		void print();
 		U64 perft(int depth);
 		int test(int depth);
@@ -392,6 +391,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					} else {
 						Pieces[QUEEN | color] ^= to;
 						zobr ^= zobrist::keys[toSq][QUEEN | color];
+						removeLastHistoryEntry();
 					}
 					Pieces[captured] ^= to;
 					zobr ^= zobrist::keys[toSq][captured];
@@ -580,8 +580,8 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			} else {
 				Pieces[QUEEN | color] ^= to;
 				zobr ^= zobrist::keys[toSq][QUEEN | color];
+				removeLastHistoryEntry();
 			}
-			removeLastHistoryEntry();
 			Pieces[PAWN | color] ^= from;
 			zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
 			Pieces[CPIECES | color] ^= tf;
@@ -726,7 +726,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					Pieces[piecet[i]] ^= tf;
 					Pieces[CPIECES | color] ^= tf;
 					zobr ^= toggle;
-					tmp &= tmp-1;
+					tmp &= tmp - 1;
 				}
 			}
 		} else {
@@ -1306,12 +1306,12 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			moving &= moving - 1;
 		}
 	} else {
+		bitboard occ = Pieces[CPIECES | white] | Pieces[CPIECES | black];
 		if (( checkedBy & (checkedBy - 1) ) == bitboard(0)){
 			//1) Capturing the attacking piece
 			int toSq = square(checkedBy);
 			int attacker = QUEEN | (color ^ 1);
 			while ((Pieces[attacker] & checkedBy)==0) attacker -= 2;
-
 			zobr ^= zobrist::keys[toSq][attacker];
 			Pieces[attacker] ^= checkedBy;
 			Pieces[CPIECES | (color ^ 1)] ^= checkedBy;
@@ -1451,7 +1451,6 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 									pieceScore += Value::piece[attacker];
 
 									pieceScore += Value::piece[PAWN | color];
-									removeLastHistoryEntry();
 									Pieces[PAWN | color] ^= from;
 									Pieces[CPIECES | color] ^= tf;
 									zobr ^= toggle;
@@ -1485,48 +1484,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					}
 				}
 			}
-			bitboard tmp = Pieces[KING | color];
-			tmp &= KingMoves[toSq];
-			from = Pieces[KING | color];
-			if (tmp != 0){
-				tf = from | checkedBy;
-				toggle = zobrist::keys[square(from)][KING | color];
-				toggle ^= zobrist::keys[toSq][KING | color];
-				Pieces[KING | color] ^= tf;
-				Pieces[CPIECES | color] ^= tf;
-				zobr ^= toggle;
-				addToHistory(zobr);
-				if (validPosition<color>()){
-					score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
-					if( score >= beta ) {
-						zobr ^= zobrist::keys[toSq][attacker];
-						Pieces[attacker] ^= checkedBy;
-						Pieces[CPIECES | (color ^ 1)] ^= checkedBy;
-						pieceScore += Value::piece[attacker];
-
-						removeLastHistoryEntry();
-						Pieces[KING | color] ^= tf;
-						Pieces[CPIECES | color] ^= tf;
-						zobr ^= toggle;
-
-						halfmoves = oldhm;
-						zobr ^= zobrist::blackKey;
-						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
-						if (color==black) --fullmoves;
-						return beta;	// fail-hard beta-cutoff
-					}
-					if( mode == PV && score > alpha ) {
-						alpha = score;
-						pvFound = true;
-					}
-				}
-				removeLastHistoryEntry();
-				Pieces[KNIGHT | color] ^= tf;
-				Pieces[CPIECES | color] ^= tf;
-				zobr ^= toggle;
-			}
-			tmp = Pieces[KNIGHT | color] & KnightMoves[toSq];
+			bitboard tmp = Pieces[KNIGHT | color] & KnightMoves[toSq];
 			while (tmp != 0){
 				from = tmp & -tmp;
 				tf = from | checkedBy;
@@ -1567,7 +1525,6 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				zobr ^= toggle;
 				tmp &= tmp - 1;
 			}
-			bitboard occ = Pieces[CPIECES | white] | Pieces[CPIECES | black];
 			tmp = Pieces[BISHOP | color] & bishopAttacks(occ, toSq);
 			while (tmp != 0){
 				from = tmp & -tmp;
@@ -1610,11 +1567,16 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				tmp &= tmp - 1;
 			}
 			tmp = Pieces[ROOK | color] & rookAttacks(occ, toSq);
+			bitboard oldcastling = castling;
+			key ct = zobrist::castling[(castling*castlingsmagic)>>59];
+			zobr ^= ct;
 			while (tmp != 0){
 				from = tmp & -tmp;
 				tf = from | checkedBy;
 				toggle = zobrist::keys[square(from)][ROOK | color];
 				toggle ^= zobrist::keys[toSq][ROOK | color];
+				castling &= ~from;
+				toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 				Pieces[ROOK | color] ^= tf;
 				Pieces[CPIECES | color] ^= tf;
 				zobr ^= toggle;
@@ -1631,6 +1593,8 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						Pieces[ROOK | color] ^= tf;
 						Pieces[CPIECES | color] ^= tf;
 						zobr ^= toggle;
+						zobr ^= ct;
+						castling = oldcastling;
 
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
@@ -1650,6 +1614,8 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				zobr ^= toggle;
 				tmp &= tmp - 1;
 			}
+			zobr ^= ct;
+			castling = oldcastling;
 			tmp = Pieces[QUEEN | color] & queenAttacks(occ, toSq);
 			while (tmp != 0){
 				from = tmp & -tmp;
@@ -1691,17 +1657,520 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				zobr ^= toggle;
 				tmp &= tmp - 1;
 			}
+			pieceScore += Value::piece[attacker];
+			zobr ^= zobrist::keys[toSq][attacker];
+			Pieces[attacker] ^= checkedBy;
+			Pieces[CPIECES | (color ^ 1)] ^= checkedBy;
 			//2) Block it if it is a ray piece
-			//TODO 2)
+			//ray is a subset of empty
+			bitboard ray = rays[square(Pieces[KING | color])][toSq];
+			bitboard tmpP, to;
+			bitboard tmp2 = Pieces[PAWN | color];
+			if ((ray & tmpEnPassant) != 0){
+				toSq = square(tmpEnPassant);
+				bitboard attacker, cp = tmpEnPassant;
+				if (color == white){
+					cp >>= 8;
+				} else {
+					cp <<= 8;
+				}
+				for (int diff = ((color==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
+					if (color == white){
+						attacker = tmpEnPassant >> diff;
+					} else {
+						attacker = tmpEnPassant << -diff;
+					}
+					if ((attacker & Pieces[PAWN | color]) != 0){
+						tf = tmpEnPassant | attacker;
+						toggle = zobrist::keys[toSq][PAWN | color];
+						toggle ^= zobrist::keys[toSq-diff][PAWN | color];
+						toggle ^= zobrist::keys[toSq+(color==white)?-8:8][PAWN | (color ^ 1)];
+						Pieces[PAWN | color] ^= tf;
+						Pieces[PAWN | (color^1)] ^= cp;
+						zobr ^= toggle;
+						Pieces[CPIECES | color] ^= tf;
+						Pieces[CPIECES | (color^1)] ^= cp;
+						addToHistory(zobr);
+						if (validPosition<color>()){
+							pieceScore -= Value::piece[PAWN | (color ^ 1)];
+							score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+							pieceScore += Value::piece[PAWN | (color ^ 1)];
+							if( score >= beta ) {
+								removeLastHistoryEntry();
+								Pieces[PAWN | color] ^= tf;
+								Pieces[PAWN | (color^1)] ^= cp;
+								zobr ^= toggle;
+								Pieces[CPIECES | color] ^= tf;
+								Pieces[CPIECES | (color^1)] ^= cp;
+
+								halfmoves = oldhm;
+								zobr ^= zobrist::blackKey;
+								enPassant = tmpEnPassant;
+								if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+								if (color==black) --fullmoves;
+								return beta;	// fail-hard beta-cutoff
+							}
+							if( mode == PV && score > alpha ) {
+								alpha = score;
+								pvFound = true;
+							}
+						}
+						removeLastHistoryEntry();
+						Pieces[PAWN | color] ^= tf;
+						Pieces[PAWN | (color^1)] ^= cp;
+						zobr ^= toggle;
+						Pieces[CPIECES | color] ^= tf;
+						Pieces[CPIECES | (color^1)] ^= cp;
+					}
+				}
+			}
+			tmp = ray;
+			if (color == white){
+				tmp2 <<= 8;
+				tmp &= tmp2;
+				tmpP = lastRank_w & tmp;
+				tmp &= notlastRank_w;
+				tmp2 &= ~occ;
+				tmp2 &= pstartRank_w << 8;
+				tmp2 <<= 8;
+			} else {
+				tmp2 >>= 8;
+				tmp &= tmp2;
+				tmpP = lastRank_b & tmp;
+				tmp &= notlastRank_b;
+				tmp2 &= ~occ;
+				tmp2 &= pstartRank_b >> 8;
+				tmp2 >>= 8;
+			}
+			tmp2 &= ray;
+			while (tmp2 != 0){
+				to = tmp2 & -tmp2;
+				if (color == white){
+					tf = to | (to >> 16);
+					enPassant = to >> 8;
+				} else {
+					tf = to | (to << 16);
+					enPassant = to << 8;
+				}
+				toSq = square(to);
+				toggle = zobrist::keys[toSq][PAWN | color];
+				toggle ^= zobrist::keys[toSq+((color==white)?-16:16)][PAWN | color];
+				toggle ^= zobrist::enPassant[7&square( enPassant )];
+				Pieces[PAWN | color] ^= tf;
+				Pieces[CPIECES | color] ^= tf;
+				zobr ^= toggle;
+				addToHistory(zobr);
+				if (validPosition<color>()) {
+					score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+					if( score >= beta ) {
+						removeLastHistoryEntry();
+						Pieces[PAWN | color] ^= tf;
+						Pieces[CPIECES | color] ^= tf;
+						zobr ^= toggle;
+
+						halfmoves = oldhm;
+						zobr ^= zobrist::blackKey;
+						enPassant = tmpEnPassant;
+						if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+						if (color==black) --fullmoves;
+						return beta;	// fail-hard beta-cutoff
+					}
+					if( mode == PV && score > alpha ) {
+						alpha = score;
+						pvFound = true;
+					}
+				}
+				removeLastHistoryEntry();
+				Pieces[PAWN | color] ^= tf;
+				Pieces[CPIECES | color] ^= tf;
+				zobr ^= toggle;
+				tmp2 &= tmp2 - 1;
+			}
+			while (tmpP != 0){
+				to = tmpP & -tmpP;
+				if (color == white){
+					from = to >> 8;
+				} else {
+					from = to << 8;
+				}
+				tf = to | from;
+				toSq = square(to);
+				Pieces[PAWN | color] ^= from;
+				Pieces[QUEEN | color] ^= to;
+				zobr ^= zobrist::keys[toSq][QUEEN | color];
+				zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+				Pieces[CPIECES | color] ^= tf;
+				addToHistory(zobr);
+				if (validPosition<color>()) {
+					pieceScore -= Value::piece[PAWN | color];
+					for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
+						pieceScore += Value::piece[prom];
+						score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+						pieceScore -= Value::piece[prom];
+						Pieces[prom] ^= to;
+						zobr ^= zobrist::keys[toSq][prom];
+						removeLastHistoryEntry();
+						if( score >= beta ) {
+							pieceScore += Value::piece[PAWN | color];
+							Pieces[PAWN | color] ^= from;
+							zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+							Pieces[CPIECES | color] ^= tf;
+							halfmoves = oldhm;
+							zobr ^= zobrist::blackKey;
+							enPassant = tmpEnPassant;
+							if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+							if (color==black) --fullmoves;
+							return beta;	// fail-hard beta-cutoff
+						}
+						if( mode == PV && score > alpha ) {
+							alpha = score;
+							pvFound = true;
+						}
+						if (prom > (PAWN | colormask) + 2){
+							Pieces[prom - 2] ^= to;
+							zobr ^= zobrist::keys[toSq][prom - 2];
+							addToHistory(zobr);
+						}
+					}
+					pieceScore += Value::piece[PAWN | color];
+				} else {
+					Pieces[QUEEN | color] ^= to;
+					zobr ^= zobrist::keys[toSq][QUEEN | color];
+					removeLastHistoryEntry();
+				}
+				Pieces[PAWN | color] ^= from;
+				zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+				Pieces[CPIECES | color] ^= tf;
+				tmpP &= tmpP - 1;
+			}
+			while (tmp != 0){
+				to = tmp & -tmp;
+				if (color == white){
+					tf = to | (to >> 8);
+				} else {
+					tf = to | (to << 8);
+				}
+				toSq = square(to);
+				toggle = zobrist::keys[toSq][PAWN | color];
+				toggle ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+				Pieces[PAWN | color] ^= tf;
+				Pieces[CPIECES | color] ^= tf;
+				zobr ^= toggle;
+				addToHistory(zobr);
+				if (validPosition<color>()) {
+					score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+					if( score >= beta ) {
+						removeLastHistoryEntry();
+						Pieces[PAWN | color] ^= tf;
+						Pieces[CPIECES | color] ^= tf;
+						zobr ^= toggle;
+
+						halfmoves = oldhm;
+						zobr ^= zobrist::blackKey;
+						enPassant = tmpEnPassant;
+						if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+						if (color==black) --fullmoves;
+						return beta;	// fail-hard beta-cutoff
+					}
+					if( mode == PV && score > alpha ) {
+						alpha = score;
+						pvFound = true;
+					}
+				}
+				removeLastHistoryEntry();
+				Pieces[PAWN | color] ^= tf;
+				Pieces[CPIECES | color] ^= tf;
+				zobr ^= toggle;
+				tmp &= tmp - 1;
+			}
+			int fromSq;
+			tmpP = Pieces[KNIGHT | color];
+			while (tmpP != 0){
+				from = tmpP & -tmpP;
+				fromSq = square(from);
+				tmp = ray & KnightMoves[fromSq];
+				while (tmp != 0){
+					to = tmp & -tmp;
+					toSq = square(to);
+					tf = to | from;
+					toggle = zobrist::keys[toSq][KNIGHT | color];
+					toggle ^= zobrist::keys[fromSq][KNIGHT | color];
+					Pieces[KNIGHT | color] ^= tf;
+					Pieces[CPIECES | color] ^= tf;
+					zobr ^= toggle;
+					addToHistory(zobr);
+					if (validPosition<color>()){
+						score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+						if( score >= beta ) {
+							removeLastHistoryEntry();
+							Pieces[KNIGHT | color] ^= tf;
+							Pieces[CPIECES | color] ^= tf;
+							zobr ^= toggle;
+
+							halfmoves = oldhm;
+							zobr ^= zobrist::blackKey;
+							enPassant = tmpEnPassant;
+							if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+							if (color==black) --fullmoves;
+							return beta;	// fail-hard beta-cutoff
+						}
+						if( mode == PV && score > alpha ) {
+							alpha = score;
+							pvFound = true;
+						}
+					}
+					removeLastHistoryEntry();
+					Pieces[KNIGHT | color] ^= tf;
+					Pieces[CPIECES | color] ^= tf;
+					zobr ^= toggle;
+					tmp &= tmp - 1;
+				}
+				tmpP &= tmpP - 1;
+			}
+			tmpP = Pieces[BISHOP | color];
+			while (tmpP != 0){
+				from = tmpP & -tmpP;
+				fromSq = square(from);
+				tmp = ray & bishopAttacks(occ, fromSq);
+				while (tmp != 0){
+					to = tmp & -tmp;
+					toSq = square(to);
+					tf = to | from;
+					toggle = zobrist::keys[toSq][BISHOP | color];
+					toggle ^= zobrist::keys[fromSq][BISHOP | color];
+					Pieces[BISHOP | color] ^= tf;
+					Pieces[CPIECES | color] ^= tf;
+					zobr ^= toggle;
+					addToHistory(zobr);
+					if (validPosition<color>()){
+						score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+						if( score >= beta ) {
+							removeLastHistoryEntry();
+							Pieces[BISHOP | color] ^= tf;
+							Pieces[CPIECES | color] ^= tf;
+							zobr ^= toggle;
+
+							halfmoves = oldhm;
+							zobr ^= zobrist::blackKey;
+							enPassant = tmpEnPassant;
+							if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+							if (color==black) --fullmoves;
+							return beta;	// fail-hard beta-cutoff
+						}
+						if( mode == PV && score > alpha ) {
+							alpha = score;
+							pvFound = true;
+						}
+					}
+					removeLastHistoryEntry();
+					Pieces[BISHOP | color] ^= tf;
+					Pieces[CPIECES | color] ^= tf;
+					zobr ^= toggle;
+					tmp &= tmp - 1;
+				}
+				tmpP &= tmpP - 1;
+			}
+			tmpP = Pieces[ROOK | color];
+			//Rooks in corners can not get into ray, so changing castling rights is useless
+			//as rooks will never be in a position where they have castling right.
+			while (tmpP != 0){
+				from = tmpP & -tmpP;
+				fromSq = square(from);
+				tmp = ray & rookAttacks(occ, fromSq);
+				while (tmp != 0){
+					to = tmp & -tmp;
+					toSq = square(to);
+					tf = to | from;
+					toggle = zobrist::keys[toSq][ROOK | color];
+					toggle ^= zobrist::keys[fromSq][ROOK | color];
+					Pieces[ROOK | color] ^= tf;
+					Pieces[CPIECES | color] ^= tf;
+					zobr ^= toggle;
+					addToHistory(zobr);
+					if (validPosition<color>()){
+						score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+						if( score >= beta ) {
+							removeLastHistoryEntry();
+							Pieces[ROOK | color] ^= tf;
+							Pieces[CPIECES | color] ^= tf;
+							zobr ^= toggle;
+
+							halfmoves = oldhm;
+							zobr ^= zobrist::blackKey;
+							enPassant = tmpEnPassant;
+							if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+							if (color==black) --fullmoves;
+							return beta;	// fail-hard beta-cutoff
+						}
+						if( mode == PV && score > alpha ) {
+							alpha = score;
+							pvFound = true;
+						}
+					}
+					removeLastHistoryEntry();
+					Pieces[ROOK | color] ^= tf;
+					Pieces[CPIECES | color] ^= tf;
+					zobr ^= toggle;
+					tmp &= tmp - 1;
+				}
+				tmpP &= tmpP - 1;
+			}
+			tmpP = Pieces[QUEEN | color];
+			while (tmpP != 0){
+				from = tmpP & -tmpP;
+				fromSq = square(from);
+				tmp = ray & queenAttacks(occ, fromSq);
+				while (tmp != 0){
+					to = tmp & -tmp;
+					toSq = square(to);
+					tf = to | from;
+					toggle = zobrist::keys[toSq][QUEEN | color];
+					toggle ^= zobrist::keys[fromSq][QUEEN | color];
+					Pieces[QUEEN | color] ^= tf;
+					Pieces[CPIECES | color] ^= tf;
+					zobr ^= toggle;
+					addToHistory(zobr);
+					if (validPosition<color>()){
+						score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+						if( score >= beta ) {
+							removeLastHistoryEntry();
+							Pieces[QUEEN | color] ^= tf;
+							Pieces[CPIECES | color] ^= tf;
+							zobr ^= toggle;
+
+							halfmoves = oldhm;
+							zobr ^= zobrist::blackKey;
+							enPassant = tmpEnPassant;
+							if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+							if (color==black) --fullmoves;
+							return beta;	// fail-hard beta-cutoff
+						}
+						if( mode == PV && score > alpha ) {
+							alpha = score;
+							pvFound = true;
+						}
+					}
+					removeLastHistoryEntry();
+					Pieces[QUEEN | color] ^= tf;
+					Pieces[CPIECES | color] ^= tf;
+					zobr ^= toggle;
+					tmp &= tmp - 1;
+				}
+				tmpP &= tmpP - 1;
+			}
 		}
 		//3) Move the king
 		halfmoves = oldhm + 1;
 		bitboard from = Pieces[KING | color];
 		int fromSq = square(from);
 		bitboard mv = KingMoves[fromSq];
-		bitboard tmp = mv;
-		//TODO continue King's moves
-		//FIXME do not count twice about capturing a piece checking the king.
+		bitboard tmp1 = mv, tmp, to;
+		//tmp1 &= checkedBy;
+		bitboard tf;
+		key toggle;
+		int toSq;
+		bitboard oldcastling = castling;
+		key ct = zobrist::castling[(castling*castlingsmagic)>>59];
+		castling &= castlingc<color>::deactrights;
+		ct ^= zobrist::castling[(castling*castlingsmagic)>>59];
+		zobr ^= ct;
+		for (int attacker = QUEEN | (color ^ 1); attacker >= 0 ; attacker -= 2){
+			tmp = Pieces[attacker] & tmp1;
+			while (tmp != 0){
+				to = tmp & -tmp;
+				toSq = square(to);
+				Pieces[attacker] ^= to;
+				Pieces[CPIECES | (color ^ 1)] ^= to;
+				zobr ^= zobrist::keys[toSq][attacker];
+				tf = from | to;
+				toggle = zobrist::keys[fromSq][KING | color];
+				toggle ^= zobrist::keys[toSq][KING | color];
+				Pieces[KING | color] ^= tf;
+				Pieces[CPIECES | color] ^= tf;
+				zobr ^= toggle;
+				addToHistory(zobr);
+				if (validPosition<color>()){
+					pieceScore -= Value::piece[attacker];
+					score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+					pieceScore += Value::piece[attacker];
+					if( score >= beta ) {
+						zobr ^= zobrist::keys[toSq][attacker];
+						Pieces[attacker] ^= to;
+						Pieces[CPIECES | (color ^ 1)] ^= to;
+
+						removeLastHistoryEntry();
+						Pieces[KING | color] ^= tf;
+						Pieces[CPIECES | color] ^= tf;
+						zobr ^= toggle;
+
+						castling = oldcastling;
+						zobr ^= ct;
+
+						halfmoves = oldhm;
+						zobr ^= zobrist::blackKey;
+						enPassant = tmpEnPassant;
+						if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+						if (color==black) --fullmoves;
+						return beta;	// fail-hard beta-cutoff
+					}
+					if( mode == PV && score > alpha ) {
+						alpha = score;
+						pvFound = true;
+					}
+				}
+				removeLastHistoryEntry();
+				Pieces[KING | color] ^= tf;
+				Pieces[CPIECES | color] ^= tf;
+				zobr ^= toggle;
+				Pieces[attacker] ^= to;
+				Pieces[CPIECES | (color ^ 1)] ^= to;
+				zobr ^= zobrist::keys[toSq][attacker];
+				tmp &= tmp - 1;
+			}
+		}
+		tmp = mv;
+		tmp &= ~occ;
+		while (tmp != 0){
+			to = tmp & -tmp;
+			toSq = square(to);
+			tf = to | from;
+			toggle = zobrist::keys[toSq][KING | color];
+			toggle ^= zobrist::keys[fromSq][KING | color];
+			Pieces[KING | color] ^= tf;
+			Pieces[CPIECES | color] ^= tf;
+			zobr ^= toggle;
+			addToHistory(zobr);
+			if (validPosition<color>()){
+				score = searchDeeper<mode, color^1>(alpha, beta, depth, pvFound);
+				if( score >= beta ) {
+					removeLastHistoryEntry();
+					Pieces[KING | color] ^= tf;
+					Pieces[CPIECES | color] ^= tf;
+					zobr ^= toggle;
+
+					castling = oldcastling;
+					zobr ^= ct;
+
+					halfmoves = oldhm;
+					zobr ^= zobrist::blackKey;
+					enPassant = tmpEnPassant;
+					if (enPassant != 0) zobr ^= zobrist::enPassant[7&square( enPassant )];
+					if (color==black) --fullmoves;
+					return beta;	// fail-hard beta-cutoff
+				}
+				if( mode == PV && score > alpha ) {
+					alpha = score;
+					pvFound = true;
+				}
+			}
+			removeLastHistoryEntry();
+			Pieces[KING | color] ^= tf;
+			Pieces[CPIECES | color] ^= tf;
+			zobr ^= toggle;
+			tmp &= tmp - 1;
+		}
+		castling = oldcastling;
+		zobr ^= ct;
 	}
 	halfmoves = oldhm;
 	zobr ^= zobrist::blackKey;
@@ -1711,10 +2180,9 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 	if (mode == Perft && depth == dividedepth) {
 		U64 moves = horizonNodes;
 		moves -= stHorNodes;
+#ifdef DIVIDEPERFT
 		int oldplaying = playing;
 		playing = color;
-		//std::cout << pre << getFEN() << '\t' << moves;
-#if DIVIDEPERFT
 		DWORD bytes_read, bytes_written;
 		CHAR buffer[4096];
 		// Write a message to the child process
@@ -1737,7 +2205,6 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			pre += "\t";
 			dividedepth = depth-1;
 			search<mode, color>(alpha, beta, depth);
-			search<mode, color>(alpha, beta, depth);
 			std::cout << "-----------------------------------------" << std::endl;
 			pre = oldpre;
 			dividedepth = depth;
@@ -1746,7 +2213,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		}**/
 		playing = oldplaying;
 #else
-		std::cout << std::endl;
+		std::cout << pre << getFEN() << '\t' << moves << std::endl;
 #endif
 	}
 	if (mode == Perft) return alpha + 1;
@@ -1858,6 +2325,7 @@ template<int color> bool Board::stalemate(){
 				moving &= moving - 1;
 			}
 		}
+		temp &= temp - 1;
 	}
 	temp = Pieces[BISHOP | color];
 	while (temp != 0){
@@ -1882,6 +2350,7 @@ template<int color> bool Board::stalemate(){
 				moving &= moving - 1;
 			}
 		}
+		temp &= temp - 1;
 	}
 	temp = Pieces[ROOK | color];
 	while (temp != 0){
@@ -1906,6 +2375,7 @@ template<int color> bool Board::stalemate(){
 				moving &= moving - 1;
 			}
 		}
+		temp &= temp - 1;
 	}
 	temp = Pieces[QUEEN | color];
 	while (temp != 0){
@@ -1930,6 +2400,7 @@ template<int color> bool Board::stalemate(){
 				moving &= moving - 1;
 			}
 		}
+		temp &= temp - 1;
 	}
 	bitboard attacking[2], attc;
 	if (color==white){
@@ -1973,7 +2444,7 @@ template<int color> bool Board::stalemate(){
 			res = validPosition<color>(occ ^ cpt ^ from ^ enPassant);
 			Pieces[PAWN | (color ^ 1)] ^= cpt;
 			if (res) return false;
-			attc &= attc - 1;
+			moving &= moving - 1;
 		}
 	}
 	//If castling was available, King would had a normal move as well!

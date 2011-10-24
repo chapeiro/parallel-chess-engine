@@ -87,6 +87,7 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 #ifdef DIVIDEPERFT
 				WriteFile((board->child_input_write), "quit\n", strlen("quit\n"), &bytes_written, NULL);
 #endif
+				cout.flush();
 				delete board;
 				return false;
 			}
@@ -153,7 +154,7 @@ bool pvtestInterface(string input, time_t &totalTime, unsigned long long int &to
 		cout << endl;
 		return true;
 	} else if (mode == 'M'){
-		if (res >= Value::MAT){
+		if ((playing == 'w' && res >= Value::MAT) || (playing == 'b' && res <= -Value::MAT)){
 			cout << "\tOK" << endl;
 			return true;
 		} else {

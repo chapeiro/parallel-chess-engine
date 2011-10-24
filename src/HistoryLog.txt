@@ -1,3 +1,44 @@
+2011/10/24 : (on 32-bit Windows Vista)
+		//Special Search is activated when in check.
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	885	sec
+	Total running time :	885	sec
+	Leaf Nodes per Second (search): 5404413
+	Leaf Nodes per Second (real): 5404413
+2011/10/23 : (on 32-bit Windows Vista)
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	916	sec
+	Total running time :	916	sec
+	Leaf Nodes per Second (search): 5221513
+	Leaf Nodes per Second (real): 5221513
+2011/10/23 : (on 64-bit Ubuntu 11.10)
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	319	sec
+	Total running time :	321	sec
+	Leaf Nodes per Second (search): 14993436
+	Leaf Nodes per Second (real): 14900019
+2011/10/23 : (on 64-bit Windows 8 (DP))
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	676	sec
+	Total running time :	677	sec
+	Leaf Nodes per Second (search): 7075304
+	Leaf Nodes per Second (real): 7064853
+2011/10/23 : (on 64-bit Windows 8 (DP))
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	713	sec
+	Total running time :	714	sec
+	Leaf Nodes per Second (search): 6708143 (assertions On)
+	Leaf Nodes per Second (real): 6698748
 2011/8/9 :
 	Perft ended.
 	No errors have been found.
