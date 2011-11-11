@@ -51,7 +51,9 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 			totalTime += time(NULL) - st;
 			if (result == solution){
 				totalNodes += result;
-				cout << "\t\t\tOK\n";
+				if (solution < 10000000ull) cout << '\t';
+				if (solution < 100000000000000ull) cout << '\t';
+				cout << "\tOK\n";
 			} else {
 				cout << "\tCounted : \t" << result << "\tFailed!" << endl;
 #ifdef DIVIDEPERFT

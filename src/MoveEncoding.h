@@ -7,7 +7,6 @@
 
 #ifndef MOVEENCODING_H_
 #define MOVEENCODING_H_
-#include <string>
 class Mask {
 public :
 	static const int from = 63;
@@ -34,18 +33,20 @@ public :
 	static const int capturedPiece = 29;
 };
 
-struct move{
-	int fromX, fromY, toX, toY;
-	char promoteTo;
-	bool operator ==(move m){
-		if (fromX == m.fromX && fromY == m.fromY && toX==m.toX && toY==m.toY && promoteTo==m.promoteTo){
-			return true;
+namespace chapeiro {
+	struct move{
+		int fromX, fromY, toX, toY;
+		char promoteTo;
+		bool operator ==(move m){
+			if (fromX == m.fromX && fromY == m.fromY && toX==m.toX && toY==m.toY && promoteTo==m.promoteTo){
+				return true;
+			}
+			return false;
 		}
-		return false;
-	}
-};
+	};
 
-move convertUCImove(char m[6]);
-bool moveIsNull(move m);
+	move convertUCImove(char m[6]);
+	bool moveIsNull(move m);
+}
 
 #endif /* MOVEENCODING_H_ */

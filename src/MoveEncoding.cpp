@@ -7,19 +7,15 @@
 
 #include "MoveEncoding.h"
 
-using namespace std;
-
-move getNullMove(){
-	move n;
+chapeiro::move getNullMove(){
+	chapeiro::move n;
 	n.fromX = -1;
 	return n;
 }
 
-move convertUCImove(char m[6]){
-	if (m[0]=='0'){ //0000
-		return getNullMove();
-	}
-	move ret;
+chapeiro::move chapeiro::convertUCImove(char m[6]){
+	if (m[0]=='0'/**0000**/) return getNullMove();
+	chapeiro::move ret;
 	ret.fromX = m[0]-'a';
 	ret.fromY = m[1]-'1';
 	ret.toX = m[2]-'a';
@@ -32,6 +28,6 @@ move convertUCImove(char m[6]){
 	return ret;
 }
 
-bool moveIsNull(move m){
+bool chapeiro::moveIsNull(chapeiro::move m){
 	return m.fromX==-1;
 }

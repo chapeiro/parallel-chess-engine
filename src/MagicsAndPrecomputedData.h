@@ -13,7 +13,7 @@ typedef chapeiro::bitboard bitboard;
 
 #include <stdio.h>
 void precomputeData();
-void MagicGenerator(int maxBitsRook, int maxBitsBishop, FILE* out);
+void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShiftBits, bitboard raysl[64][64], FILE* out);
 
 namespace filled{
  	extern const bitboard normal[64];//, a1h8[64], h1a8[64], vertical[64];
@@ -40,4 +40,8 @@ extern const int BishopShift[64];
 extern const bitboard RookAttacks[64][4096];
 extern const bitboard BishopAttacks[64][512];
 extern const bitboard rays[64][64];
+extern const int direction[64][64];
+extern const bitboard XRayOFCMask[64][64];
+extern const bitboard XRayOFCMagic[64][64];
+extern const bitboard XRayOFCChecker[64][64][64];
 #endif /* MAGICSANDPRECOMPUTEDDATA_H_ */

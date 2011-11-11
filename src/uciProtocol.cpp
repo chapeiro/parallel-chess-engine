@@ -95,7 +95,7 @@ int uci(){
 				char m[6];
 				while (sscanf(input.c_str(), " %5s%n", m, &b) >= 1){
 					input.erase(0, b);
-					board->make(convertUCImove(m));
+					board->make(chapeiro::convertUCImove(m));
 				}
 			}
 			board->print();

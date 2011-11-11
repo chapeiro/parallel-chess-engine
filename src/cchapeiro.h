@@ -17,6 +17,7 @@ const std::string ndbgline = "info string Chapeiro Debug : ";
 
 const int maxRookBits = 12;
 const int maxBishopBits = 9;
+const int maxCheckAvoidanceShiftBits = 6;
 
 const int minPerftDepth = 1;
 const int maxPerftDepth = 100;

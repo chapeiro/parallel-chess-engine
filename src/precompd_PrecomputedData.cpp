@@ -1,6 +1,6 @@
 /**   Auto-generated file.
  * Contains pre-computed data for CChapeiro.
- * Generated : 2011/10/13 21:09:05
+ * Generated : 2011/11/11 22:23:56
  **/
 
 #include "Board.h"

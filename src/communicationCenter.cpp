@@ -80,7 +80,13 @@ int main(){
 				}
 				if (result){
 					runningTime = time(NULL) - runningTime;
-					cout << "Perft ended successfully." << endl;
+					cout << "Perft ended successfully. (Assertions : ";
+#ifdef NDEBUG
+					cout << "OFF )";
+#else
+					cout << " ON )";
+#endif
+					cout << endl;
 					cout << "No errors have been found." << endl;
 					cout << "Total leaf nodes :\t" << totalNodes << endl;
 					cout << "Total search  time :\t" << totalTime << "\tsec" << endl;

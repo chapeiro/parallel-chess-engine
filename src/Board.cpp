@@ -65,14 +65,16 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 			} else {
 				ind = getPieceIndex(inp);
 				if ((ind & ~colormask) == WRONG_PIECE) throw MalformedFEN();
+				sq = index(x, y);
 				if (ind == (KING | white)){
 					++wk;
+					//kingSq[white] = sq;
 				} else if (ind == (KING | black)){
 					++bk;
+					//kingSq[black] = sq;
 				} else {
 					pieceScore += Value::piece[ind];
 				}
-				sq = index(x, y);
 				updatePieces(sq, ind);
 				++x;
 			}
@@ -233,8 +235,10 @@ void Board::make(move m){
 		if (playing==black) ++fullmoves;
 		if (playing==white){
 			deactivateCastlingRights<white>();
+			//kingSq[white] = square(to);
 		} else {
 			deactivateCastlingRights<black>();
+			//kingSq[black] = square(to);
 		}
 		togglePlaying();
 		enPassant = bitboard(0);
@@ -243,11 +247,17 @@ void Board::make(move m){
 			if ((Pieces[i] & filled::normal[from])!=0){
 				updatePieces(from, i);
 				updatePieces(to, i);
-				if ((i^playing)==ROOK && (filled::normal[from] & allcastlingrights) != 0){
+				if ((i^(~colormask))==ROOK && (filled::normal[from] & allcastlingrights) != 0){
 						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						castling ^= filled::normal[from];
 						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
-				}
+				}/** else if ((i^(~colormask)) == KING){
+					if (playing==white){
+						kingSq[white] = square(to);
+					} else {
+						kingSq[black] = square(to);
+					}
+				}**/
 				break;
 			}
 		}
@@ -263,7 +273,13 @@ void Board::make(move m){
  * Use with caution, slow method
  *	Only for use in debugging.
  **/
-std::string Board::getFEN(){
+std::string Board::getFEN(){ return getFEN(playing); }
+
+/**
+ * Use with caution, slow method
+ *	Only for use in debugging.
+ **/
+std::string Board::getFEN(int playingl){
 	//A FEN record contains six fields.
 	//The separator between fields is a space.
 	//	The fields are:
@@ -315,7 +331,7 @@ std::string Board::getFEN(){
 	}
 	fen += ' ';
 	//	2. Active color. "w" means white moves next, "b" means black.
-	fen += ( playing==white ? 'w' : 'b' );
+	fen += ( playingl==white ? 'w' : 'b' );
 	fen += ' ';
 	//	3. Castling availability. If neither side can castle,
 	//		this is "-". Otherwise, this has one or more letters:
@@ -386,7 +402,7 @@ std::string Board::getFEN(){
 void Board::print(){
 	if (debugcc){
 		std::cout << ndbgline << "--------------------------------\n";
-		std::cout << ndbgline << getFEN() << '\n';
+		std::cout << ndbgline << getFEN(playing) << '\n';
 		for (int i = white ; i < LASTPIECE ; i+=2){
 			std::cout << ndbgline << "White " << PiecesName[i>>1] << ": \n";
 			printbb(Pieces[i]);
@@ -489,30 +505,4 @@ int Board::test(int depth){
 	if (psc != pieceScore) {std::cout << psc << "|pS" << pieceScore << std::endl; failed = true;}
 	if (failed) return 0;
 	return score;
-}
-
-bitboard Board::bishopAttacks(bitboard occ, const int &sq){
-	occ &= BishopMask[sq];
-	occ *= BishopMagic[sq];
-#ifndef fixedShift
-	occ >>= BishopShift[sq];
-#else
-	occ >>= 64-maxBishopBits;
-#endif
-	return BishopAttacks[sq][occ];
-}
-
-bitboard Board::rookAttacks(bitboard occ, const int &sq){
-	occ &= RookMask[sq];
-	occ *= RookMagic[sq];
-#ifndef fixedShift
-	occ >>= RookShift[sq];
-#else
-	occ >>= 64-maxRookBits;
-#endif
-	return RookAttacks[sq][occ];
-}
-
-bitboard Board::queenAttacks(bitboard occ, const int &sq){
-	return rookAttacks(occ, sq) | bishopAttacks(occ, sq);
 }

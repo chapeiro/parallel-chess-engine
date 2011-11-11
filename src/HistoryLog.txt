@@ -1,3 +1,99 @@
+2011/11/10 : (on 64-bit Windows 8 (DP))
+//-O3
+	Perft ended successfully. (Assertions : OFF )
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	668	sec
+	Total running time :	668	sec
+	Leaf Nodes per Second (search): 7160039
+	Leaf Nodes per Second (real): 7160039
+2011/11/10 : (on 64-bit Windows 8 (DP))
+//-O3 -funsafe-loop-optimizations -Wunsafe-loop-optimizations
+	Perft ended successfully. (Assertions : OFF )
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	664	sec
+	Total running time :	664	sec
+	Leaf Nodes per Second (search): 7203171
+	Leaf Nodes per Second (real): 7203171
+2011/11/10 : (on 64-bit Windows 8 (DP))
+//-O3 -m64 -funsafe-loop-optimizations -Wunsafe-loop-optimizations
+	Perft ended successfully. (Assertions : OFF )
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	661	sec
+	Total running time :	662	sec
+	Leaf Nodes per Second (search): 7235864
+	Leaf Nodes per Second (real): 7224933
+2011/11/10 : (on 64-bit Windows 8 (DP))
+//-O3 -m64 -funsafe-loop-optimizations -Wunsafe-loop-optimizations -fwhole-program -flto
+	Perft ended successfully. (Assertions : OFF )
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	660	sec
+	Total running time :	660	sec
+	Leaf Nodes per Second (search): 7246827
+	Leaf Nodes per Second (real): 7246827
+2011/11/10 : (on 64-bit Windows 8 (DP))
+//-O3 -m64 -fmerge-all-constants -fmodulo-sched -fmodulo-sched-allow-regmoves -funsafe-loop-optimizations -Wunsafe-loop-optimizations -fsched-pressure -fipa-pta -fipa-matrix-reorg -ftree-loop-distribution -ftracer -funroll-loops -fwhole-program -flto
+	Perft ended successfully. (Assertions : OFF )
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	670	sec
+	Total running time :	670	sec
+	Leaf Nodes per Second (search): 7138665
+	Leaf Nodes per Second (real): 7138665
+2011/11/08 : (on 64-bit Ubuntu 11.10)
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	287	sec
+	Total running time :	288	sec
+	Leaf Nodes per Second (search): 16665178
+	Leaf Nodes per Second (real): 16607312
+2011/11/08 : (on 64-bit Windows 8 (DP))
+		//WOW !!! worst than on 32-bit ???
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	681	sec
+	Total running time :	682	sec
+	Leaf Nodes per Second (search): 7023357
+	Leaf Nodes per Second (real): 7013058
+2011/11/07 : (on 32-bit Windows Vista)
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	672	sec
+	Total running time :	672	sec
+	Leaf Nodes per Second (search): 7117419
+	Leaf Nodes per Second (real): 7117419
+2011/10/26 : (on 64-bit Ubuntu 11.10)
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	309	sec
+	Total running time :	309	sec
+	Leaf Nodes per Second (search): 15478660
+	Leaf Nodes per Second (real): 15478660
+2011/10/25 : (on 64-bit Windows 8 (DP))
+		//Replaced validPosition with validPositionNonChecked where possible
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	680	sec
+	Total running time :	680	sec
+	Leaf Nodes per Second (search): 7033685
+	Leaf Nodes per Second (real): 7033685
+2011/10/25 : (on 64-bit Windows 8 (DP))
+		//Delayed Pieces[] update
+	Perft ended successfully.
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	721	sec
+	Total running time :	721	sec
+	Leaf Nodes per Second (search): 6633711
+	Leaf Nodes per Second (real): 6633711
 2011/10/24 : (on 32-bit Windows Vista)
 		//Special Search is activated when in check.
 	Perft ended successfully.
