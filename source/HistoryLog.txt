@@ -1,3 +1,20 @@
+2012/1/10 : (on 64-bit Windows 7)
+	Perft ended successfully. (Assertions : OFF )
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	111	sec
+	Total running time :	111	sec
+	Leaf Nodes per Second (search): 43089244
+	Leaf Nodes per Second (real): 43089244
+2012/1/10 : (on 64-bit Windows 7)
+//New pc, new architecture
+	Perft ended successfully. (Assertions : OFF )
+	No errors have been found.
+	Total leaf nodes :	4782906132
+	Total search  time :	113	sec
+	Total running time :	113	sec
+	Leaf Nodes per Second (search): 42326602
+	Leaf Nodes per Second (real): 42326602
 2011/12/17 : (on 32-bit Windows Vista)
 	Perft ended successfully. (Assertions : OFF )
 	No errors have been found.

@@ -196,7 +196,9 @@ void Board::make(chapeiro::move m){
 				updatePieces(from, playing | PAWN);
 				updatePieces(to, playing | PAWN);
 				enPassant = filled::normal[(from+to)/2];
-				zobr ^= zobrist::enPassant[7&square( enPassant )];
+				unsigned long int tmpSq;
+				square(&tmpSq, enPassant);
+				zobr ^= zobrist::enPassant[7&tmpSq];
 			} else {
 				//en passant
 				updatePieces(from, playing | PAWN);
@@ -418,6 +420,7 @@ void Board::print(){
 
 U64 Board::perft(int depth){
 	horizonNodes = 0;
+	qNodes = 0;
 	nodes = 0;
 	key oldZobr = zobr;
 	bitboard oldep = enPassant;
@@ -463,6 +466,7 @@ U64 Board::perft(int depth){
 
 int Board::test(int depth){
 	horizonNodes = 0;
+	qNodes = 0;
 	nodes = 0;
 	key oldZobr = zobr;
 	bitboard oldep = enPassant;
