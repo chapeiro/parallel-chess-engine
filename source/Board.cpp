@@ -163,7 +163,7 @@ void Board::make(chapeiro::move m){
 		} else {
 			lastRank = lastRank_b;
 		}
-		if ((Pieces[CPIECES | playing] & filled::normal[to])!=0){
+		if ((All_Pieces(playing) & filled::normal[to])!=0){
 			//capture
 			updatePieces(from, playing | PAWN);
 			if (rank(to)==lastRank){
@@ -304,7 +304,7 @@ std::string Board::getFEN(int playingl){
 		int count = 0;
 		for (int x = 0 ; x < 8 ; ++x){
 			bitboard a = filled::normal[index(x, y)];
-			if ((Pieces[CPIECES | white] & a) !=0){
+			if ((All_Pieces(white) & a) !=0){
 				if (count != 0){
 					fen += count+'0';
 					count = 0;
@@ -314,7 +314,7 @@ std::string Board::getFEN(int playingl){
 						fen += PiecesNameSort[i>>1];
 					}
 				}
-			} else if ((Pieces[CPIECES | black] & a) !=0){
+			} else if ((All_Pieces(black) & a) !=0){
 				if (count != 0){
 						fen += count+'0';
 						count = 0;

@@ -32,6 +32,13 @@ namespace chapeiro{
 	typedef unsigned long long int zobrist;
 }
 
+#define ff_file(x) ((chapeiro::bitboard (0x0101010101010101ull)) << (x))
+#define ff_rank(x) ((chapeiro::bitboard (0x00000000000000FFull)) << (x))
+//#define ff_mDiag(x) (((chapeiro::bitboard (0x0102040810204080ull)) << (x-7)) | ((chapeiro::bitboard (0x0102040810204080ull)) >> (x-7)))
+
+#define nf_file(x) (~file(x))
+#define nf_rank(x) (~rank(x))
+
 typedef unsigned long long int U64;
 #ifdef _WIN32
 #define formatBitboard "%#018I64Xull"
