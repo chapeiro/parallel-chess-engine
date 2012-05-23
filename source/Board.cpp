@@ -10,6 +10,10 @@
 #include "SquareMapping.h"
 #include "MoveEncoding.h"
 #include "Values.h"
+#include <ctime>
+#include "boost/date_time/posix_time/posix_time.hpp"
+#include "boost/date_time/microsec_time_clock.hpp"
+
 
 const int Value::piece[12] = {100,
 							 -100,
@@ -23,7 +27,51 @@ const int Value::piece[12] = {100,
 							 -975,
 							  MAT,
 							 -MAT};
-int Board::hashSize = 1;
+
+const int Value::knightSq[64] = {
+					//0,   1,   2,   3,   4,   5,   6,   7
+					-33, -20, -19, -14, -14, -19, -20, -33, //x=0 a
+					-20, -17,   3,  14,  14,   3, -17, -20, //x=1 b
+					-19,   3,  35,  29,  29,  35,   3, -19, //x=2 c
+					-14,  14,  29,  33,  33,  29,  14, -14, //x=3 d
+					-14,  14,  29,  33,  33,  29,  14, -14, //x=4 e
+					-19,   3,  35,  29,  29,  35,   3, -19, //x=5 f
+					-20, -17,   3,  14,  14,   3, -17, -20, //x=6 g
+					-33, -20, -19, -14, -14, -19, -20, -33  //x=7 h
+};
+
+const int Value::kingSq[64] = {
+		 20, 30, 10,  0,  0, 10, 30, 20,
+		 20, 20,  0,  0,  0,  0, 20, 20,
+		-10,-20,-20,-20,-20,-20,-20,-10,
+		-20,-30,-30,-40,-40,-30,-30,-20,
+		-20,-30,-30,-40,-40,-30,-30,-20,
+		-10,-20,-20,-20,-20,-20,-20,-10,
+		 20, 20,  0,  0,  0,  0, 20, 20,
+		 20, 30, 10,  0,  0, 10, 30, 20
+};
+
+const int Value::WpawnSq[64] = {
+		 0,  0,  0,  0,  0,  0,  0,  0,
+		50, 50, 50, 50, 50, 50, 50, 50,
+		10, 10, 20, 30, 30, 20, 10, 10,
+		 5,  5, 10, 25, 25, 10,  5,  5,
+		 0,  0,  0, 20, 20,  0,  0,  0,
+		 5, -5,-10,  0,  0,-10, -5,  5,
+		 5, 10, 10,-20,-20, 10, 10,  5,
+		 0,  0,  0,  0,  0,  0,  0,  0
+};
+
+const int Value::BpawnSq[64] = {
+		 0,  0,  0,  0,  0,  0,  0,  0,
+		 5, 10, 10,-20,-20, 10, 10,  5,
+		 5, -5,-10,  0,  0,-10, -5,  5,
+		 0,  0,  0, 20, 20,  0,  0,  0,
+		 5,  5, 10, 25, 25, 10,  5,  5,
+		10, 10, 20, 30, 30, 20, 10, 10,
+		50, 50, 50, 50, 50, 50, 50, 50,
+		 0,  0,  0,  0,  0,  0,  0,  0
+};
 
 Board* Board::createBoard(const char FEN[]) {
 	char fenBoard[71], fenEnP[3];
@@ -41,9 +89,29 @@ Board* Board::createBoard(const char FEN[]) {
 	return new Board(fenBoard, fenPlaying, fenCastling, fenEnPX, fenEnPY, fenHC, fenFM);
 }
 
+Board::Board(Board * b){
+	for (int i = 0 ; i < PIECESMAX ; ++i) Pieces[i] = b->Pieces[i];
+	White_Pieces = b->White_Pieces;
+	Black_Pieces = b->Black_Pieces;
+	searchThread = NULL;
+	castling = b->castling;
+	zobr = b->zobr;
+	lastHistoryEntry = b->lastHistoryEntry;
+	pieceScore = b->pieceScore;
+	playing = b->playing;
+	memcpy(kingSq, b->kingSq, (colormask + 1)*sizeof(*kingSq));
+	enPassant = b->enPassant;
+	halfmoves = b->halfmoves;
+	fullmoves = b->fullmoves;
+	//Memory
+	memcpy(history, b->history, 256*sizeof(*history));
+}
+
 Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, int fenEnPY, int fenHC, int fenFM){
 	//General initialize
 	for (int i = 0 ; i < PIECESMAX ; ++i) Pieces[i] = bitboard(0);
+	All_Pieces(white) = All_Pieces(black) = bitboard(0);
+	searchThread = NULL;
 	castling = 0;
 	zobr = 0;
 	lastHistoryEntry = 0;
@@ -149,6 +217,7 @@ void Board::capture(int to){
  * ATTENTION!: move m has to be LEGAL (or null move)
  */
 void Board::make(chapeiro::move m){
+	//FIXME
 	if (chapeiro::moveIsNull(m)){
 		togglePlaying();
 		return;
@@ -159,11 +228,11 @@ void Board::make(chapeiro::move m){
 		//is Pawn
 		int lastRank;
 		if (playing==white){
-			lastRank = lastRank_w;
+			lastRank = 7;
 		} else {
-			lastRank = lastRank_b;
+			lastRank = 0;
 		}
-		if ((All_Pieces(playing) & filled::normal[to])!=0){
+		if ((All_Pieces(playing^1) & filled::normal[to])!=0){
 			//capture
 			updatePieces(from, playing | PAWN);
 			if (rank(to)==lastRank){
@@ -228,7 +297,8 @@ void Board::make(chapeiro::move m){
 			}
 		}
 		if (castl) {
-			updatePieces(from, ROOK | playing);
+			int rookFrom = (to > from) ? index('a'-'a', m.fromY) : index('h'-'a', m.fromY);
+			updatePieces(rookFrom, ROOK | playing);
 			updatePieces((from+to)/2, ROOK | playing);
 		}
 		updatePieces(from, KING | playing);
@@ -249,7 +319,7 @@ void Board::make(chapeiro::move m){
 			if ((Pieces[i] & filled::normal[from])!=0){
 				updatePieces(from, i);
 				updatePieces(to, i);
-				if ((i^(~colormask))==ROOK && (filled::normal[from] & allcastlingrights) != 0){
+				if ((i&(~colormask))==ROOK && (filled::normal[from] & castling) != 0){
 						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						castling ^= filled::normal[from];
 						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
@@ -403,18 +473,33 @@ std::string Board::getFEN(int playingl){
  **/
 void Board::print(){
 	if (debugcc){
-		std::cout << ndbgline << "--------------------------------\n";
-		std::cout << ndbgline << getFEN(playing) << '\n';
+		std::cerr << ndbgline << "--------------------------------\n";
+		std::cerr << ndbgline << getFEN(playing) << '\n';
 		for (int i = white ; i < LASTPIECE ; i+=2){
-			std::cout << ndbgline << "White " << PiecesName[i>>1] << ": \n";
+			std::cerr << ndbgline << "White " << PiecesName[i>>1] << ": \n";
 			printbb(Pieces[i]);
 		}
 		for (int i = black ; i < LASTPIECE ; i+=2){
-			std::cout << ndbgline << "Black " << PiecesName[i>>1] << ": \n";
+			std::cerr << ndbgline << "Black " << PiecesName[i>>1] << ": \n";
 			printbb(Pieces[i]);
 		}
-		std::cout << ndbgline << "Zobrist Key: " << zobr << '\n';
-		std::cout << ndbgline << "--------------------------------" << std::endl;
+		std::cerr << ndbgline << "White King square : " << kingSq[white] << "\n";
+		std::cerr << ndbgline << "Black King square : " << kingSq[black] << "\n";
+		printbb(kingIsAttackedBy<white>());
+		assert((1ull << kingSq[white]) == Pieces[KING | white]);
+		printbb(kingIsAttackedBy<black>());
+		assert((1ull << kingSq[black]) == Pieces[KING | black]);
+		std::cerr << ndbgline << "Black checking Pieces : \n";
+		printbb(kingIsAttackedBy<white>());
+		std::cerr << ndbgline << "White checking Pieces : \n";
+		printbb(kingIsAttackedBy<black>());
+		std::cerr << ndbgline << "White Pieces : \n";
+		printbb(All_Pieces(white));
+		std::cerr << ndbgline << "Black Pieces : \n";
+		printbb(All_Pieces(black));
+		std::cerr << ndbgline << "Zobrist Key: " << zobr << '\n';
+		std::cerr << ndbgline << "static score : " << pieceScore << '\n';
+		std::cerr << ndbgline << "--------------------------------" << std::endl;
 	}
 }
 
@@ -509,4 +594,111 @@ int Board::test(int depth){
 	if (psc != pieceScore) {std::cout << psc << "|pS" << pieceScore << std::endl; failed = true;}
 	if (failed) return 0;
 	return score;
+}
+
+void Board::go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
+	searchThread = new boost::thread(&Board::startSearch, this, maxDepth, wTime, bTime, wInc, bInc, movesUntilTimeControl, searchForXMsec, infinitiveSearch);
+}
+
+void Board::stop(){
+	if (searchThread == NULL) return;
+	searchThread->interrupt();
+	delete searchThread;
+	searchThread = NULL;
+}
+
+int rootDepth = 0;
+
+void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
+	boost::posix_time::ptime startTime = boost::posix_time::microsec_clock::universal_time();
+	if (movesUntilTimeControl == NO_NEXT_TIME_CONTROL) movesUntilTimeControl = 40;
+	U64 timeToSearch = ((playing == white) ? wTime : bTime) / movesUntilTimeControl;
+	boost::posix_time::ptime searchEndTime = startTime + boost::posix_time::milliseconds(timeToSearch < searchForXMsec ? timeToSearch : searchForXMsec);
+	boost::posix_time::time_duration elapsedTime = boost::posix_time::milliseconds(0);
+	boost::posix_time::ptime currentTime ;
+	int depth = (STARTING_DEPTH < maxDepth) ? STARTING_DEPTH : 1; //STARTING_DEPTH
+	int alpha = -inf;
+	int beta = inf;
+	int move = 0;
+	int score = 0;
+	int matdcycles = 0;
+	int matmoves = inf;
+	U64 stNodes = nodes;
+	if (debugcc) std::cerr << ndbgline << zobr << std::endl;
+	Board * extrPv = NULL;
+	while (depth <= maxDepth && (infinitiveSearch || ((searchEndTime - boost::posix_time::microsec_clock::universal_time()) > elapsedTime*ELAPSED_TIME_FACTOR)) && matdcycles < 3){
+		rootDepth = depth;
+		if (playing == white){
+			score = search<PV, white>(alpha, beta, depth);
+		} else {
+			score = search<PV, black>(alpha, beta, depth);
+		}
+		elapsedTime = boost::posix_time::microsec_clock::universal_time() - startTime;
+		if (boost::this_thread::interruption_requested()) {
+			ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
+			break; //DO NOT USE THE SCORE RETURNED BY SEARCH!!! IT IS NOT VALID!!!
+		}
+		move = getBestMove(zobr);
+		//Sending Infos
+		std::cout << "info";
+		std::cout << " depth " << depth;
+		std::cout << " time " << elapsedTime.total_milliseconds();
+		std::cout << " nodes " << nodes-stNodes;
+		if (elapsedTime.total_milliseconds() != 0ull) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.total_milliseconds());
+		extrPv = new Board(this);
+		std::cout << " pv " << extrPv->extractPV(depth);
+		if (isMat(score)) {
+			std::cout << " score mate ";
+			if (score < 0) std::cout << '-';
+			matmoves = ((Value::MAT - abs(score) - 1)/2) + 1;
+			std::cout << matmoves;
+			//++matdcycles;
+		} else {
+			matdcycles = 0;
+			std::cout << " score cp " << score;
+		}
+		std::cout << " hashfull " << (1000*ttUsed/TRANSPOSITION_TABLE_SIZE);
+		delete extrPv;
+		std::cout << std::endl;
+		if (debugcc) std::cerr << ndbgline << "Score : " << score << std::endl;
+		++depth;
+	}
+	if (move != 0){
+		char m[6];
+		std::cout << "bestmove " << moveToString(move, m) << std::endl;
+		if (depth > maxDepth) std::cerr << ndbgline << "Maximum Depth reached!" << std::endl;
+	} else {
+		std::cerr << ndbgline << "Move not found in hashtable !!!" << std::endl;
+	}
+}
+
+
+std::string Board::extractPV(int depth){
+	int move;
+	if (depth == 0 || (move = getBestMove(zobr)) == 0) return "";
+	std::string pv = "";
+	char m[6];
+	moveToString(move, m);
+	make(chapeiro::convertUCImove(m));
+	pv += m;
+	pv += " " + extractPV(depth - 1);
+	return pv;
+}
+
+char * Board::moveToString(int move, char* m){
+	int fromSq = getTTMove_From(move);
+	int toSq = getTTMove_To(move);
+	int prom = getTTMove_Prom_spec(move);
+	m[0] = (char) ('a'+file(fromSq));
+	m[1] = (char) ('1'+rank(fromSq));
+	m[2] = (char) ('a'+file(toSq));
+	m[3] = (char) ('1'+rank(toSq));
+	if (((bitboard(1) << fromSq) & Pieces[PAWN | playing]) && (prom & (~TTMove_EnPassantFlag & ~colormask)) != PAWN){
+		const char PiecesNameSort[] = {'p', 'n', 'b', 'r', 'q', 'k'};
+		m[4] = PiecesNameSort[prom >> 1];
+		m[5] = '\0';
+	} else {
+		m[4] = '\0';
+	}
+	return m;
 }

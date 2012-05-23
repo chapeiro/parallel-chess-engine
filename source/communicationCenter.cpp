@@ -9,12 +9,11 @@
 #include <sstream>
 #include <fstream>
 #include <string>
-#include <time.h>
 #include "testCChapeiro.h"
 #include "uciProtocol.h"
 #include <cstdio>
 using namespace std;
-bool debugcc = true;
+bool debugcc = false;
 
 /**void signEndOfFile(string reason){
 	char ct[20];
@@ -63,7 +62,7 @@ int main(){
 			std::cout << ndbgline << "Finished!" << endl;
 			return 0;
 		} else if (mode.find("perft")!=string::npos){
-			time_t totalTime (0);
+			std::time_t totalTime (0);
 			unsigned long long int totalNodes = 0;
 			if (mode.compare("perft")==0){
 				time_t runningTime (time(NULL));
@@ -105,12 +104,12 @@ int main(){
 			if (mode.compare("pvtest")==0){
 				time_t runningTime (time(NULL));
 				bool result = true;
-				std::ifstream pvtestsdb ("PVtestsDatabase.pvt");
+				ifstream pvtestsdb ("PVtestsDatabase.pvt");
 				if (!pvtestsdb.good()){
 					std::cout << ndbgline << "Open PV tests' database failed!" << endl;
 					continue;
 				}
-				std::string str;
+				string str;
 				while (result && !pvtestsdb.eof()){
 					getline(pvtestsdb, str);
 					result = pvtestInterface(str, totalTime, totalNodes, totalLeafNodes);

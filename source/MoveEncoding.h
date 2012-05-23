@@ -49,4 +49,16 @@ namespace chapeiro {
 	bool moveIsNull(move m);
 }
 
+#define NULL_MOVE (0)
+
+#define TTMoveSize (18)
+#define TTMove_EnPassantFlag (1 << (TTMoveSize-1))
+#define TTMove_EnPassantPromFlag (1 << 5)
+//EnPassantFlag|prom|--to--|-from-
+//000000000000-|----|------|------
+#define getTTMoveFormat(fromSq, toSq, prom_spec) ((fromSq) | ((toSq) << 6) | ((prom_spec) << 12))
+#define getTTMove_From(move) ((move) & 0x3F)
+#define getTTMove_To(move) (((move) >> 6) & 0x3F)
+#define getTTMove_Prom_spec(move) (((move) >> 12) & 0x1F)
+
 #endif /* MOVEENCODING_H_ */

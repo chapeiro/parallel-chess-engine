@@ -8,11 +8,16 @@
 #include "testCChapeiro.h"
 #include <stdio.h>
 #include "Board.h"
+#include <string>
 #include <ctime>
 #ifdef DIVIDEPERFT
 #include <windows.h>
 #endif
 using namespace std;
+
+bool perftInterface(string input, time_t &totalTime, unsigned long long int &totalNodes){
+	return perftInterface(input, totalTime, totalNodes, 0, 1000);
+}
 
 bool perftInterface(string input, time_t &totalTime, unsigned long long int &totalNodes, int mindepth, int maxdepth){
 	int a (-1), b (-1), c(-1);
@@ -32,7 +37,7 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 			cout << "(type \"perft\" to run automated perft)" << endl;
 			return false;
 		}
-		Board* board = Board::createBoard(input.substr(a, b).c_str());
+		Board* board = Board::createBoard(input.substr(a, b-a).c_str());
 		cout << board->getFEN() << endl;
 		input.erase(0, c);
 		unsigned long long int result, solution;

@@ -25,8 +25,17 @@ const int maxPerftDepth = 100;
 extern bool debugcc;
 //#define std::cout cout << "info string Chapeiro Debug : "
 void debug(std::string);
-#define NoPromotion -1;
+#define NoPromotion (-1)
+#define NO_NEXT_TIME_CONTROL (-1)
+#define INF (0x7FFFFFF0)
+#define STARTING_DEPTH (2)
+#define ELAPSED_TIME_FACTOR (2)
 
+#ifdef STATS
+#define statistics(x) x
+#else
+#define statistics(x)
+#endif
 namespace chapeiro{
 	typedef unsigned long long int bitboard;
 	typedef unsigned long long int zobrist;
@@ -40,7 +49,7 @@ namespace chapeiro{
 #define nf_rank(x) (~rank(x))
 
 typedef unsigned long long int U64;
-#ifdef _WIN32
+#ifdef _MSC_VER
 #define formatBitboard "%#018I64Xull"
 #else
 #define formatBitboard "%#018llXull"

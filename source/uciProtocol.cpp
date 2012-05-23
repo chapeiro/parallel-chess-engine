@@ -10,6 +10,8 @@
 #include <string>
 #include <stdlib.h>
 #include "uciProtocol.h"
+#include "TranspositionTable.h"
+
 using namespace std;
 
 void help(UCI_command com){
@@ -57,10 +59,10 @@ bool initializeEngine(){
 int uci(){
 	cout << "id name Chapeiro" << endl;
 	cout << "id author Chrysogelos Periklis" << endl;
-	cout << "option name Hash type spin default 1 min 1 max 512" << endl;
+	//cout << "option name Hash type spin default 1 min 1 max 512" << endl;
 	cout << "uciok" << endl;
 	bool initialized = false;
-	Board* board = 0;
+	Board* board = NULL;
 	string input;
 	do {
 		getline(cin, input);
@@ -69,29 +71,31 @@ int uci(){
 			cout << "readyok" << endl;
 		} else if (input.substr(0, 8).compare("position")==0){
 			if (!initialized){
-				cout << "\"isready\" should have been send before \"position\"" << endl;
+				cerr << "\"isready\" should have been send before \"position\"" << endl;
 				continue;
 			}
 			int b(-1);
+			if (board) delete board;
 			if (input.find("startpos")!=string::npos){
 				board = new Board();
-				sscanf(input.c_str(), "position startpos %n", &b);
+				sscanf(input.c_str(), "position startpos%n", &b);
 			} else {
-				int a (-1), c(-1);
-				sscanf(input.c_str(), "position fen %n%*s %*c %*s %*s %*d %*d%n %n", &a, &c, &b);
-				if (a < 0 || b < 0 || c < 0) {
+				int a (-1);
+				sscanf(input.c_str(), "position fen %n%*s %*c %*s %*s %*d %*d%n", &a, &b);
+				if (a < 0 || b < 0) {
 					help(UCI_position);
 					continue;
 				}
 				try {
-					board = Board::createBoard(input.substr(a, c).c_str());
+					board = Board::createBoard(input.substr(a, b).c_str());
 				} catch (exception* e) {
 					cerr << e->what() << endl;
+					continue;
 				}
 			}
 			input.erase(0, b);
-			if (input.substr(0, 5).compare("moves")==0) {
-				input.erase(0, 5);
+			if (input.length() > 6 && input.substr(1, 5).compare("moves")==0) {
+				input.erase(0, 6);
 				char m[6];
 				while (sscanf(input.c_str(), " %5s%n", m, &b) >= 1){
 					input.erase(0, b);
@@ -99,12 +103,12 @@ int uci(){
 				}
 			}
 			board->print();
-		} else if (input.find("setoption name ")!=string::npos){
+		/**} else if (input.find("setoption name ")!=string::npos){
 			input.erase(0, 15);
 			if (input.find("Hash value ")!=string::npos){
 				input.erase(0, 11);
 				Board::hashSize = atoi(input.c_str());
-			}
+			}**/
 		} else if (input.find("debug ")!=string::npos){
 			input.erase(0, 6);
 			if (input.compare("on")==0){
@@ -118,29 +122,41 @@ int uci(){
 			}
 		} else if (input.find("ucinewgame")!=string::npos){
 			delete board;
-		} else if (input.find("go ")!=string::npos){
+			ttNewGame();
+			board = NULL;
+		} else if (input.find("go")!=string::npos){
 			//input.erase(0, 3);
-			bool infinite = input.find("infinite") != string::npos;
-			bool ponder = input.find("ponder") != string::npos;
-			int movetime = -1;
-			sscanf(input.c_str(), "movetime %i", &movetime);
-			int mate = -1;
-			sscanf(input.c_str(), "mate %i", &mate);
-			int nodes = -1;
-			sscanf(input.c_str(), "nodes %i", &nodes);
-			int depth = -1;
-			sscanf(input.c_str(), "depth %i", &depth);
-			int movestogo = -1;
-			sscanf(input.c_str(), "movestogo %i", &movestogo);
-			int winc = 0;
-			sscanf(input.c_str(), "winc %i", &winc);
-			int binc = 0;
-			sscanf(input.c_str(), "binc %i", &binc);
-			int wtime = 0;
-			sscanf(input.c_str(), "wtime %i", &wtime);
-			int btime = 0;
-			sscanf(input.c_str(), "btime %i", &btime);
-			//TODO support searchmoves ...
+			if (board){
+				bool infinite = input.find("infinite") != string::npos;
+				bool ponder = input.find("ponder") != string::npos;
+				U64 movetime = INF;
+				sscanf(input.c_str(), "movetime %i", &movetime);
+				int mate = -1;
+				sscanf(input.c_str(), "mate %i", &mate);
+				int nodes = INF;
+				sscanf(input.c_str(), "nodes %i", &nodes);
+				int depth = INF;
+				sscanf(input.c_str(), "depth %i", &depth);
+				int movestogo = NO_NEXT_TIME_CONTROL;
+				sscanf(input.c_str(), "movestogo %i", &movestogo);
+				U64 winc = 0;
+				sscanf(input.c_str(), "winc %i", &winc);
+				U64 binc = 0;
+				sscanf(input.c_str(), "binc %i", &binc);
+				U64 wtime = 40000;
+				sscanf(input.c_str(), "wtime %i", &wtime);
+				U64 btime = 40000;
+				sscanf(input.c_str(), "btime %i", &btime);
+				board->go(depth, wtime, btime, winc, binc, movestogo, movetime, infinite);
+			} else {
+				cerr << "Unknown position! Search can not start. Use position command." << endl;
+			}
+		} else if (input.find("stop")!=string::npos){
+			if (board) board->stop();
+		} else if (input.compare("stats") == 0){
+			std::cerr << ndbgline << "Beta Cut-Offs : \t\t" << betaCutOff << std::endl;
+			std::cerr << ndbgline << "HashHits Cut-Offs : \t" << hashHitCutOff << std::endl;
+			std::cerr << ndbgline << "TT misses : \t\t" << ttmisses << std::endl;
 		}
 	} while (input.compare("quit")!=0);
 	//if (debugcc) signEndOfFile("CChapeiro Terminated");

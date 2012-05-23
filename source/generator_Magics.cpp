@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include "randomc.h"
 #include <stdlib.h>
-#include <time.h>
+#include <ctime>
 #include "cchapeiro.h"
 #include "SquareMapping.h"
 #include "Board.h"
@@ -334,7 +334,7 @@ void printgm(bitboard bb) {
 
 bitboard RookMagicCalc[64];
 bitboard BishopMagicCalc[64];
-#ifdef _WIN32
+#ifdef _MSC_VER
 #define format "%#018I64xULL"
 #else
 #define format "%#018llxULL"

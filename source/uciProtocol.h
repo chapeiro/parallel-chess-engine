@@ -11,16 +11,16 @@
 
 enum UCI_command {
 	UCI_uci = 0,
-	UCI_debug,
-	UCI_isready,
-	UCI_newGame,
-	UCI_position,
-	UCI_quit
+	UCI_debug = 1,
+	UCI_isready = 2,
+	UCI_newGame = 3,
+	UCI_position = 4,
+	UCI_quit = 5
 };
 
 const std::string UCI_commandFormat[] = {
 	"uci",
-	"debug [on | off]"
+	"debug [on | off]",
 	"isready",
 	"ucinewgame",
 	"position [fen <fenstring> | startpos] moves <move1> .... <movei>",
