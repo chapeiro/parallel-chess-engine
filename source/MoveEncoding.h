@@ -60,5 +60,6 @@ namespace chapeiro {
 #define getTTMove_From(move) ((move) & 0x3F)
 #define getTTMove_To(move) (((move) >> 6) & 0x3F)
 #define getTTMove_Prom_spec(move) (((move) >> 12) & 0x1F)
+#define getTTMove_fromPS_P(ps) (ps & 0xF)
 
 #endif /* MOVEENCODING_H_ */

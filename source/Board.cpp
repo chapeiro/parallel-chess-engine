@@ -21,12 +21,12 @@ const int Value::piece[12] = {100,
 							 -320,
 							  325,
 							 -325,
-							  500,
-							 -500,
-							  975,
-							 -975,
-							  MAT,
-							 -MAT};
+							  500-(Value::rookOnOpenFile/3),
+							 -500+(Value::rookOnOpenFile/3),
+							  975-(Value::rookOnOpenFile/3),
+							 -975+(Value::rookOnOpenFile/3),
+							  Value::MAT,
+							 -Value::MAT};
 
 const int Value::knightSq[64] = {
 					//0,   1,   2,   3,   4,   5,   6,   7
@@ -99,7 +99,7 @@ Board::Board(Board * b){
 	lastHistoryEntry = b->lastHistoryEntry;
 	pieceScore = b->pieceScore;
 	playing = b->playing;
-	memcpy(kingSq, b->kingSq, (colormask + 1)*sizeof(*kingSq));
+	//memcpy(kingSq, b->kingSq, (colormask + 1)*sizeof(*kingSq));
 	enPassant = b->enPassant;
 	halfmoves = b->halfmoves;
 	fullmoves = b->fullmoves;
@@ -114,7 +114,7 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 	searchThread = NULL;
 	castling = 0;
 	zobr = 0;
-	lastHistoryEntry = 0;
+	lastHistoryEntry = -1;
 	pieceScore = 0;
 	int wk (0), bk(0);
 	//FEN processing
@@ -211,6 +211,7 @@ void Board::capture(int to){
 			return;
 		}
 	}
+	++halfmoves;
 }
 
 /**
@@ -339,6 +340,7 @@ void Board::make(chapeiro::move m){
 		enPassant = bitboard(0);
 	}
 	addToHistory(zobr);
+	forgetOldHistory();
 }
 
 /**
@@ -483,24 +485,37 @@ void Board::print(){
 			std::cerr << ndbgline << "Black " << PiecesName[i>>1] << ": \n";
 			printbb(Pieces[i]);
 		}
-		std::cerr << ndbgline << "White King square : " << kingSq[white] << "\n";
-		std::cerr << ndbgline << "Black King square : " << kingSq[black] << "\n";
-		printbb(kingIsAttackedBy<white>());
-		assert((1ull << kingSq[white]) == Pieces[KING | white]);
-		printbb(kingIsAttackedBy<black>());
-		assert((1ull << kingSq[black]) == Pieces[KING | black]);
+		unsigned long int kingSqW, kingSqB;
+		square(&kingSqW, Pieces[KING | white]);
+		square(&kingSqB, Pieces[KING | black]);
+		std::cerr << ndbgline << "White King square : " << kingSqW << "\n";
+		std::cerr << ndbgline << "Black King square : " << kingSqB << "\n";
+		const bitboard occ = All_Pieces(white) | All_Pieces(black);
+		printbb(kingIsAttackedBy<white>(occ, kingSqW));
+		//assert((1ull << kingSq[white]) == Pieces[KING | white]);
+		printbb(kingIsAttackedBy<black>(occ, kingSqB));
+		//assert((1ull << kingSq[black]) == Pieces[KING | black]);
 		std::cerr << ndbgline << "Black checking Pieces : \n";
-		printbb(kingIsAttackedBy<white>());
+		printbb(kingIsAttackedBy<white>(occ, kingSqW));
 		std::cerr << ndbgline << "White checking Pieces : \n";
-		printbb(kingIsAttackedBy<black>());
+		printbb(kingIsAttackedBy<black>(occ, kingSqB));
 		std::cerr << ndbgline << "White Pieces : \n";
 		printbb(All_Pieces(white));
 		std::cerr << ndbgline << "Black Pieces : \n";
 		printbb(All_Pieces(black));
 		std::cerr << ndbgline << "Zobrist Key: " << zobr << '\n';
 		std::cerr << ndbgline << "static score : " << pieceScore << '\n';
+		//std::cerr << ndbgline << "History : " << '\n';
+		//for (int i = 0 ; i < 256 ; ++i) std::cerr << ndbgline << "history[" << std::dec << std::setw(3) << i << "] : " << std::hex << std::setw(16) << history[i] << '\n';
+		printHistory();
 		std::cerr << ndbgline << "--------------------------------" << std::endl;
 	}
+}
+
+void Board::printHistory(){
+	std::cerr << ndbgline << "Half Moves Clock : " << halfmoves << '\n';
+	std::cerr << ndbgline << "History : " << '\n';
+	for (int i = 0 ; i <= lastHistoryEntry ; ++i) std::cerr << ndbgline << "history[" << std::dec << std::setw(3) << i << "] : " << std::hex << std::setw(16) << history[i] << '\n';
 }
 
 U64 Board::perft(int depth){
@@ -517,9 +532,9 @@ U64 Board::perft(int depth){
 	int psc = pieceScore;
 	bool failed = false;
 	if (playing == white){
-		search<Perft, white>(-inf, +inf, depth);
+		search<Perft, white, true>(-inf, +inf, depth);
 	} else {
-		search<Perft, black>(-inf, +inf, depth);
+		search<Perft, black, true>(-inf, +inf, depth);
 	}
 	if (oldZobr != zobr) {
 		std::cout << oldZobr << "|z" << zobr << std::endl;
@@ -564,9 +579,9 @@ int Board::test(int depth){
 	bool failed = false;
 	int score;
 	if (playing == white){
-		score = search<PV, white>(-inf, +inf, depth);
+		score = search<PV, white, true>(-inf, +inf, depth);
 	} else {
-		score = -search<PV, black>(-inf, +inf, depth);
+		score = -search<PV, black, true>(-inf, +inf, depth);
 	}
 	if (oldZobr != zobr) {
 		std::cout << oldZobr << "|z" << zobr << std::endl;
@@ -612,7 +627,7 @@ int rootDepth = 0;
 void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
 	boost::posix_time::ptime startTime = boost::posix_time::microsec_clock::universal_time();
 	if (movesUntilTimeControl == NO_NEXT_TIME_CONTROL) movesUntilTimeControl = 40;
-	U64 timeToSearch = ((playing == white) ? wTime : bTime) / movesUntilTimeControl;
+	U64 timeToSearch = ((playing == white) ? wTime : bTime) / (movesUntilTimeControl);
 	boost::posix_time::ptime searchEndTime = startTime + boost::posix_time::milliseconds(timeToSearch < searchForXMsec ? timeToSearch : searchForXMsec);
 	boost::posix_time::time_duration elapsedTime = boost::posix_time::milliseconds(0);
 	boost::posix_time::ptime currentTime ;
@@ -624,14 +639,14 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 	int matdcycles = 0;
 	int matmoves = inf;
 	U64 stNodes = nodes;
-	if (debugcc) std::cerr << ndbgline << zobr << std::endl;
+	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
 	Board * extrPv = NULL;
 	while (depth <= maxDepth && (infinitiveSearch || ((searchEndTime - boost::posix_time::microsec_clock::universal_time()) > elapsedTime*ELAPSED_TIME_FACTOR)) && matdcycles < 3){
 		rootDepth = depth;
 		if (playing == white){
-			score = search<PV, white>(alpha, beta, depth);
+			score = search<PV, white, true>(alpha, beta, depth);
 		} else {
-			score = search<PV, black>(alpha, beta, depth);
+			score = search<PV, black, true>(alpha, beta, depth);
 		}
 		elapsedTime = boost::posix_time::microsec_clock::universal_time() - startTime;
 		if (boost::this_thread::interruption_requested()) {
@@ -652,7 +667,7 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 			if (score < 0) std::cout << '-';
 			matmoves = ((Value::MAT - abs(score) - 1)/2) + 1;
 			std::cout << matmoves;
-			//++matdcycles;
+			++matdcycles;
 		} else {
 			matdcycles = 0;
 			std::cout << " score cp " << score;
@@ -701,4 +716,11 @@ char * Board::moveToString(int move, char* m){
 		m[4] = '\0';
 	}
 	return m;
+}
+
+void Board::forgetOldHistory(){
+	if (lastHistoryEntry < 50 || halfmoves >= lastHistoryEntry || halfmoves == 0) return;
+	int offset = lastHistoryEntry - halfmoves;
+	for (int i = 0 ; i <= halfmoves ; ++i) history[i] = history[i+offset];
+	lastHistoryEntry = halfmoves;
 }

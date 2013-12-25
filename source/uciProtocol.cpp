@@ -125,38 +125,52 @@ int uci(){
 			ttNewGame();
 			board = NULL;
 		} else if (input.find("go")!=string::npos){
-			//input.erase(0, 3);
+			input.erase(0, 3);
 			if (board){
 				bool infinite = input.find("infinite") != string::npos;
 				bool ponder = input.find("ponder") != string::npos;
 				U64 movetime = INF;
-				sscanf(input.c_str(), "movetime %i", &movetime);
+				int index;
+				if ((index = input.find("movetime")) != string::npos) sscanf(input.substr(index).c_str(), "movetime %i", &movetime);
 				int mate = -1;
-				sscanf(input.c_str(), "mate %i", &mate);
+				if ((index = input.find("mate")) != string::npos) sscanf(input.substr(index).c_str(), "mate %i", &mate);
 				int nodes = INF;
-				sscanf(input.c_str(), "nodes %i", &nodes);
+				if ((index = input.find("nodes")) != string::npos) sscanf(input.substr(index).c_str(), "nodes %i", &nodes);
 				int depth = INF;
-				sscanf(input.c_str(), "depth %i", &depth);
+				if ((index = input.find("depth")) != string::npos) sscanf(input.substr(index).c_str(), "depth %i", &depth);
 				int movestogo = NO_NEXT_TIME_CONTROL;
-				sscanf(input.c_str(), "movestogo %i", &movestogo);
+				if ((index = input.find("movestogo")) != string::npos) sscanf(input.substr(index).c_str(), "movestogo %i", &movestogo);
 				U64 winc = 0;
-				sscanf(input.c_str(), "winc %i", &winc);
+				if ((index = input.find("winc")) != string::npos) sscanf(input.substr(index).c_str(), "winc %i", &winc);
 				U64 binc = 0;
-				sscanf(input.c_str(), "binc %i", &binc);
+				if ((index = input.find("binc")) != string::npos) sscanf(input.substr(index).c_str(), "binc %i", &binc);
 				U64 wtime = 40000;
-				sscanf(input.c_str(), "wtime %i", &wtime);
+				if ((index = input.find("wtime")) != string::npos) sscanf(input.substr(index).c_str(), "wtime %i", &wtime);
 				U64 btime = 40000;
-				sscanf(input.c_str(), "btime %i", &btime);
+				if ((index = input.find("btime")) != string::npos) sscanf(input.substr(index).c_str(), "btime %i", &btime);
 				board->go(depth, wtime, btime, winc, binc, movestogo, movetime, infinite);
 			} else {
 				cerr << "Unknown position! Search can not start. Use position command." << endl;
 			}
 		} else if (input.find("stop")!=string::npos){
 			if (board) board->stop();
+#ifdef STATS
 		} else if (input.compare("stats") == 0){
+			U64 ttHits = (ttaccesses - ttmisses);
+			U64 ttHitsNCO = (ttHits - hashHitCutOff);
+			std::cerr << ndbgline << "Raw Stats Data : " << std::endl;
 			std::cerr << ndbgline << "Beta Cut-Offs : \t\t" << betaCutOff << std::endl;
 			std::cerr << ndbgline << "HashHits Cut-Offs : \t" << hashHitCutOff << std::endl;
 			std::cerr << ndbgline << "TT misses : \t\t" << ttmisses << std::endl;
+			std::cerr << ndbgline << "TT accesses : \t\t" << ttaccesses << std::endl;
+			std::cerr << ndbgline << "Killer's Cut-Offs : \t\t" << cutOffByKillerMove << std::endl;
+			std::cerr << ndbgline << "TT Type 1 Errors (min) (Hash Key Collisions ) : \t\t" << ttError_Type1_SameHashKey << std::endl;
+			std::cerr << ndbgline << "Processed Data : " << std::endl;
+			std::cerr << ndbgline << "TT hits : \t\t" << ttHits << "(" << (ttHits*100.0/ttaccesses) << "% of TT accesses)" << std::endl;
+			std::cerr << ndbgline << "TT HashHits Cut-Offs : \t\t" << (hashHitCutOff*100.0/ttHits) << "% of TT hits" << std::endl;
+			std::cerr << ndbgline << "TT Type 1 Errors (min) (Hash Key Collisions ) : \t\t" << (ttError_Type1_SameHashKey*100.0/ttHitsNCO) << "% of TT hits Which Do Not Produced Immediate Cut Off" << std::endl;
+			std::cerr << ndbgline << "TT KillerMove Cut-Offs : \t\t" << (cutOffByKillerMove*100.0/ttHitsNCO) << "% of TT Hits Which Do Not Produced Immediate Cut Off" << std::endl;
+#endif
 		}
 	} while (input.compare("quit")!=0);
 	//if (debugcc) signEndOfFile("CChapeiro Terminated");

@@ -44,8 +44,11 @@ struct ttEntry{
 extern ttEntry transpositionTable[TRANSPOSITION_TABLE_SIZE];
 extern unsigned int ttUsed;
 statistics(extern U64 ttmisses);
+statistics(extern U64 ttaccesses);
 statistics(extern U64 hashHitCutOff);
 statistics(extern U64 betaCutOff);
+statistics(extern U64 cutOffByKillerMove);
+statistics(extern U64 ttError_Type1_SameHashKey);
 
 enum SearchState{
 	ExactScore = 0,
@@ -72,7 +75,7 @@ template<SearchState state> inline bool replaceTTEntry(U64 data, int depth){
 }
 
 template<SearchState state> inline void addTTEntry(chapeiro::zobrist zobr, int depth, int move, int score){
-	if (state > 2) return;
+	//if (state > 2) return;
 	int index = getTTIndex(zobr);
 	ttEntry * entry = transpositionTable + index;
 	U64 data = entry->data;
@@ -99,6 +102,7 @@ template<int mode> inline int retrieveTTEntry(chapeiro::zobrist zobr, int depth,
 	ttEntry * entry = transpositionTable + index;
 	U64 zobrXD = entry->zobrXORdata;
 	U64 data = entry->data;
+	statistics(++ttaccesses);
 	if ((data == U64(0)) || (zobrXD ^ data) != zobr) {
 		statistics(++ttmisses);
 		return NULL_MOVE;
@@ -106,7 +110,6 @@ template<int mode> inline int retrieveTTEntry(chapeiro::zobrist zobr, int depth,
 	if (depth > tte_getDepth(data)) return tte_getKillerMove(data);
 	int ds = tte_getSearchState(data);
 	int sc = tte_getScore(data);
-	if (debugcc && tte_getDepth(data) < 0) std::cerr << "!!!!" << std::endl;
 	if (ds == ExactScore) {
 		alpha = sc;
 		beta = sc;

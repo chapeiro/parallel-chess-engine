@@ -8,14 +8,14 @@
 #ifndef VALUES_H_
 #define VALUES_H_
 
-class Value{
-public :
-	static const int MAT = 1 << 20;
-	static const int piece[12];
-	static const int knightSq[64];
-	static const int kingSq[64];
-	static const int WpawnSq[64];
-	static const int BpawnSq[64];
+namespace Value{
+	const int MAT = 1 << 20;
+	extern const int piece[12];
+	extern const int knightSq[64];
+	extern const int kingSq[64];
+	extern const int WpawnSq[64];
+	extern const int BpawnSq[64];
+	const int rookOnOpenFile = 50;
 };
 
 #define mated(x) ((x) <= (100-Value::MAT))

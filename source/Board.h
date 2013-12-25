@@ -7,9 +7,11 @@
  *      Author: Chrysogelos Periklis
  */
 
+//fixme remove
+#define quiescenceMask (4)
 #ifndef BOARD_H_
 #define BOARD_H_
-
+#include "Utilities.h"
 #include "cchapeiro.h"
 #include "zobristKeys.h"
 #include "MagicsAndPrecomputedData.h"
@@ -22,15 +24,22 @@
 #include <exception>
 #include <boost/thread/thread.hpp>
 #include "TranspositionTable.h"
+#include <iomanip>
+
+//#define NO_KILLER_MOVE
 
 #ifdef DIVIDEPERFT
 #include <windows.h>
 #endif
 
+#ifndef NDEBUG
+#define ASSUME(x) assert(x)
+#else
+#define ASSUME(x) __assume(x)
+#endif
+
 typedef chapeiro::bitboard bitboard;
 typedef chapeiro::zobrist Zobrist;
-//typedef chapeiro::move move;
-
 
 const std::string PiecesName[] = {"Pawns", "Knights", "Bishops",
 							 "Rooks", "Queens", "Kings"};
@@ -121,7 +130,6 @@ enum SearchMode {
 
 };
 
-const int quiescenceMask = 4;
 //castling precomputed
 template<int color> class castlingc {
 public :
@@ -156,7 +164,7 @@ class Board {
 		//State
 		bitboard Pieces[PIECESMAX];
 		bitboard White_Pieces, Black_Pieces;
-		unsigned long int kingSq[colormask + 1];
+		//unsigned long int kingSq[colormask + 1];
 		Zobrist zobr;
 		bitboard enPassant;
 		int halfmoves;
@@ -195,6 +203,7 @@ class Board {
 		std::string getFEN();
 		std::string getFEN(int playingl);
 		void print();
+		void printHistory();
 		U64 perft(int depth);
 		int test(int depth);
 		void go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
@@ -220,34 +229,38 @@ class Board {
 
 		void addToHistory(Zobrist position);
 		void removeLastHistoryEntry();
+		void forgetOldHistory();
 		template<int color> int getEvaluation(int depth);
+		int evaluatePawnStructure();
 		template<int color> void deactivateCastlingRights();
 		void togglePlaying();
 		void startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
-		std::string Board::extractPV(int depth);
+		std::string extractPV(int depth);
 
-		template<int color> bool validPosition();
-		template<int color> bool validPosition(const bitboard &occ);
-		template<int color> bool validPositionNonChecked();
-		template<int color> bool validPositionNonChecked(bitboard occ);
+		template<int color> bool validPosition(int kingSq);
+		template<int color> bool validPosition(bitboard occ, int kingSq);
+		template<int color> bool validPositionNonChecked(int kingSq);
+		template<int color> bool validPositionNonChecked(bitboard occ, int kingSq);
 		template<int color> bool notAttacked(bitboard target, int targetSq);
 		template<int color> bool notAttacked(bitboard target, bitboard occ, int targetSq);
-		template<int color> bitboard kingIsAttackedBy();
+		template<int color> bitboard kingIsAttackedBy(bitboard occ, int kingSq);
 
 		template<int color> bool stalemate();
 
 		bitboard bishopAttacks(bitboard occ, const int &sq);
 		bitboard rookAttacks(bitboard occ, const int &sq);
 		bitboard queenAttacks(bitboard occ, const int &sq);
-		template<int color> bitboard getChecker(bitboard occ, unsigned long int &sq);
-		template<int color> void filterAttackBB(bitboard &occ, unsigned long int &sq, bitboard &attack);
-		template<int color> bitboard getNPinnedPawns(bitboard occ);
+		template<int color> bitboard getChecker(bitboard occ, unsigned long int sq, int kingSq);
+		template<int color> void filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq);
+		template<int color> bitboard getNPinnedPawns(bitboard occ, int kingSq);
 		template<int color> int getMove(bitboard tf, int prom);
 		char * moveToString(int move, char* m);
 
-		template<SearchMode mode, int color> int search(int alpha, int beta, int depth);
-		template<SearchMode mode, int color> void searchDeeper(const int &alpha, const int &beta, const int &depth, const int &pvFound, int &score);
+		template<SearchMode mode, int color, bool root> int search(int alpha, int beta, int depth);
+		template<SearchMode mode, int color> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score);
 		template<int color> int quieSearch(int alpha, int beta);
+
+		bool threefoldRepetition();
 };
 
 inline int Board::getPieceIndex(char p){
@@ -257,7 +270,7 @@ inline int Board::getPieceIndex(char p){
 
 inline void Board::updatePieces(int sq, int ind){
 	Pieces[ind] ^= filled::normal[sq];
-	if ( (ind & ~colormask) == KING ) kingSq[ind & colormask] = sq;
+	//if ( (ind & ~colormask) == KING ) kingSq[ind & colormask] = sq;
 	zobr ^= zobrist::keys[sq][ind];
 	All_Pieces(ind) ^= filled::normal[sq];
 }
@@ -281,13 +294,12 @@ inline void Board::togglePlaying(){
 	zobr ^= zobrist::blackKey;
 }
 
-template<int color> bitboard Board::kingIsAttackedBy(){
-	bitboard occ = All_Pieces(white);
-	occ |= All_Pieces(black);
-	bitboard attackers = KnightMoves[kingSq[color]];
+template<int color> bitboard Board::kingIsAttackedBy(bitboard occ, int kingSq){
+	ASSUME(kingSq >= 0 && kingSq < 64);
+	bitboard attackers = KnightMoves[kingSq];
 	attackers &= Pieces[KNIGHT | (color^1)];
-	attackers |= rookAttacks(occ, kingSq[color]) & (Pieces[ROOK | (color^1)] | Pieces[QUEEN | (color^1)]);
-	attackers |= bishopAttacks(occ, kingSq[color]) & (Pieces[BISHOP | (color^1)] | Pieces[QUEEN | (color^1)]);
+	attackers |= rookAttacks(occ, kingSq) & (Pieces[ROOK | (color^1)] | Pieces[QUEEN | (color^1)]);
+	attackers |= bishopAttacks(occ, kingSq) & (Pieces[BISHOP | (color^1)] | Pieces[QUEEN | (color^1)]);
 	if (color == black){
 		attackers |= (((Pieces[KING | color] >> 7) & notfile7) | ((Pieces[KING | color] >> 9) & notfile0)) & Pieces[PAWN | white];
 	} else {
@@ -310,8 +322,8 @@ template<int color> inline bool Board::notAttacked(bitboard target, int targetSq
  * returns true if <code>target</code> is not attacked by <code>playing</code>
  */
 template<int color> inline bool Board::notAttacked(bitboard target, bitboard occ, int targetSq){
-	assert((target & (target-1))==0);
-	//assert(square(target) == targetSq);
+	ASSUME((target & (target-1))==0);
+	ASSUME(targetSq >= 0 && targetSq < 64);
 	if (color == black){
 		if ( ( (Pieces[PAWN | black] >> 7) & target & notfile7) != 0) return false;
 		if ( ( (Pieces[PAWN | black] >> 9) & target & notfile0) != 0) return false;
@@ -327,21 +339,23 @@ template<int color> inline bool Board::notAttacked(bitboard target, bitboard occ
 	return ((att & rookAttacks(occ, targetSq)) == 0ull);
 }
 
-template<int color> inline bool Board::validPosition(const bitboard &occ) {
-	assert((Pieces[KING | color] & (Pieces[KING | color]-1)) == 0);
-	return notAttacked<color^1>(Pieces[KING | color], occ, kingSq[color]);
+template<int color> inline bool Board::validPosition(bitboard occ, int kingSq) {
+	ASSUME((Pieces[KING | color] & (Pieces[KING | color]-1)) == 0);
+	return notAttacked<color^1>(Pieces[KING | color], occ, kingSq);
 }
 
-template<int color> inline bool Board::validPositionNonChecked(bitboard occ) {
-	bitboard att = Pieces[BISHOP | ( color ^ 1 )] | Pieces[QUEEN | ( color ^ 1 )];
-	if ((att & bishopAttacks(occ, kingSq[color])) != 0) return false;
+template<int color> inline bool Board::validPositionNonChecked(bitboard occ, int kingSq) {
+	return (((Pieces[BISHOP | ( color ^ 1 )] | Pieces[QUEEN | ( color ^ 1 )]) & bishopAttacks(occ, kingSq)) == 0) &&
+			(((Pieces[ROOK | ( color ^ 1 )] | Pieces[QUEEN | ( color ^ 1 )]) & rookAttacks(occ, kingSq)) == 0);
+	/**bitboard att = Pieces[BISHOP | ( color ^ 1 )] | Pieces[QUEEN | ( color ^ 1 )];
+	if ((att & bishopAttacks(occ, kingSq)) != 0) return false;
 	att = Pieces[ROOK | ( color ^ 1 )] | Pieces[QUEEN | ( color ^ 1 )];
-	if ((att & rookAttacks(occ, kingSq[color])) != 0) return false;
-	return true;
+	if ((att & rookAttacks(occ, kingSq)) != 0) return false;
+	return true;**/
 }
 
-template<int color> inline bool Board::validPositionNonChecked() {
-	return validPositionNonChecked<color>(All_Pieces(white) | All_Pieces(black));
+template<int color> inline bool Board::validPositionNonChecked(int kingSq) {
+	return validPositionNonChecked<color>(All_Pieces(white) | All_Pieces(black), kingSq);
 }
 
 /**
@@ -352,42 +366,50 @@ template<int color> inline bool Board::validPositionNonChecked() {
  * 	All_Pieces(white),
  * 	All_Pieces(black)
  */
-template<int color> inline bool Board::validPosition() {
-	assert((Pieces[KING | color] & (Pieces[KING | color]-1)) == bitboard(0));
-	return notAttacked<color^1>(Pieces[KING | color], kingSq[color]);
+template<int color> inline bool Board::validPosition(int kingSq) {
+	ASSUME((Pieces[KING | color] & (Pieces[KING | color]-1)) == bitboard(0));
+	return notAttacked<color^1>(Pieces[KING | color], kingSq);
 }
 
-template<SearchMode mode, int color> inline void Board::searchDeeper(const int &alpha, const int &beta, const int &depth, const int &pvFound, int &score){
+template<SearchMode mode, int color> inline void Board::searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score){
 	addToHistory(zobr);
 	if (mode >= quiescenceMask){
-		score = -search<mode, color>(-beta, -alpha, depth - 1);
+		score = -search<mode, color, false>(-beta, -alpha, depth - 1);
 	} else if (mode == PV){
 		if (pvFound) {
-			score = -search<ZW, color>(-1-alpha, -alpha, depth - 1);
-			if ( score > alpha ) score = -search<PV, color>(-beta, -alpha, depth - 1);
+			score = -search<ZW, color, false>(-1-alpha, -alpha, depth - 1);
+			if ( score > alpha ) score = -search<PV, color, false>(-beta, -alpha, depth - 1);
 		} else {
-			score = -search<PV, color>(-beta, -alpha, depth - 1);
+			score = -search<PV, color, false>(-beta, -alpha, depth - 1);
 		}
 	} else if (mode == ZW){
-		score = -search<ZW, color>(-beta, -alpha, depth - 1);
+		score = -search<ZW, color, false>(-beta, -alpha, depth - 1);
 	} else {
-		score = -search<Perft, color>(-beta, -alpha, depth - 1);
+		score = -search<Perft, color, false>(-beta, -alpha, depth - 1);
 	}
 	removeLastHistoryEntry();
 }
 
-template<SearchMode mode, int color> int Board::search(int alpha, int beta, int depth){
-	//alpha - lower bound
-	//beta - higher bound
+/**
+ *
+ * @param alpha	lower bound
+ * @param beta	lower bound
+ * @param depth	number of plies till the horizon, 0 if the horizon has already been reached
+ *
+ * @return
+ **/
+template<SearchMode mode, int color, bool root> int Board::search(int alpha, int beta, int depth){
+	//FIXME This is saved as a betaCutOff later in the TT!
+	if (color==white) if (boost::this_thread::interruption_requested()) return inf; //TODO Revision! does not seem such a good idea :(
+	//count nodes searched
 	++nodes;
+	if ((!root) && (mode != Perft) && (mode < quiescenceMask) && (halfmoves >= 100 || threefoldRepetition())) return 0;
 	if (mode >= quiescenceMask){
+		//count nodes searched by quiescence
 		++qNodes;
 		int standPat = getEvaluation<color>(depth);
 		if (color == black) standPat = -standPat;
-		if (mated(standPat)) {
-			//--nodes;
-			return standPat;
-		}
+		if (mated(standPat)) return standPat;
 		if (standPat >= beta) {
 			statistics(++betaCutOff);
 			return beta; //fail-hard beta-cutoff Opponent will have a better answer
@@ -398,56 +420,356 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		 */
 		if (standPat > alpha) alpha = standPat;
 	} else if (depth == 0) {
+		//count horizon nodes reached (Useful for Perft)
 		++horizonNodes;
 		if (mode & Perft) {
-			if (dividedepth==0) std::cout << pre << getFEN(color) << '\n';
+			if (dividedepth == 0) std::cout << pre << getFEN(color) << '\n';
 			return beta;
 		}
+		//Horizon has been reached! Start quiescence search
 		//return search<QuiescencePV, color>(alpha, beta, depth);
-		return search<(SearchMode) (mode | quiescenceMask), color>(mode==ZW?beta-1:alpha, beta, depth);
+		return search<(SearchMode) (mode | quiescenceMask), color, root>(mode==ZW?beta-1:alpha, beta, depth);
 	}
+#ifndef NO_TRANSPOSITION_TABLE
 	//FIXME
-	int ttResult = retrieveTTEntry<mode>(zobr, depth, alpha, beta);
+	int killerMove = retrieveTTEntry<mode>(zobr, depth, alpha, beta);
 	//if (ttResult == ttExactScoreReturned) return alpha;
 	if (alpha >= beta) {
 		statistics(++hashHitCutOff);
 		return alpha;
 	}
-	//TODO play killer move
-	//TODO add heuristics
-	bitboard checkedBy = kingIsAttackedBy<color>();
-	unsigned long int toSq, tmpSq, bestProm = 0;
-	bitboard bestTF(0);
+#endif
 
-
+	//move state forward (halfmoves (oldhm), fullmoves (fullmoves+{0, 1}(color)), enPassant (tmpEnPassant)
+	unsigned long int enSq;
 	int oldhm (halfmoves);
-	//if (color==white) boost::this_thread::interruption_point();
-	//FIXME betaCutOffs save this to TT
-	if (color==white) if (boost::this_thread::interruption_requested()) return inf; //TODO Revision! does not seem such a good idea :(
-	if (color==black) ++fullmoves;
-	if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+	square( &enSq, enPassant );
+	enSq &= 7;
+	if (enPassant) zobr ^= zobrist::enPassant[enSq];
 	bitboard tmpEnPassant (enPassant);
+	fullmoves += color;							//if (color==black) ++fullmoves;
 	enPassant = bitboard(0);
 	halfmoves = 0;
 	zobr ^= zobrist::blackKey;
-	int startingAlpha = alpha;
+
 	U64 stNodes (nodes);
 	U64 stHorNodes (horizonNodes);
+	int startingAlpha = alpha;
+
 	int score;
 	bool pvFound = false;
-	bitboard to, from, tf;
-	bitboard occ = All_Pieces(white);
-	occ |= All_Pieces(black);
-	Zobrist toggle;
-	bitboard tmp = occ;
+
+	bitboard bestTF(0);
+	unsigned long int bestProm (0);
+
+	unsigned long int kingSq;
+	square(&kingSq, Pieces[KING | color]);
+	bitboard oldP[(KING | black)+1];
+	for (int i = 0 ; i <= (KING | black) ; ++i) oldP[i] = Pieces[i];
+	bitboard all = 0;
+	for (int i = PAWN | color ; i <= (KING | color) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color) == all);
+	/**
+uci
+isready
+ucinewgame
+isready
+position startpos moves g1f3 g8f6 d2d4 d7d5 c2c4 c7c6 e2e3 c8g4 b1c3 e7e6 h2h3 g4h5 g2g4 h5g6 f3e5 b8d7 e5g6 h7g6 d1b3 d8c7 f1g2 d5c4 b3c4 e8c8 g4g5 f6d5 g2d5 e6d5 c4b3 d8e8 e1f1 d7b6 h3h4 f7f6 g5f6 g7f6 h1g1 h8h4 g1g6 c7h7
+go infinite
+	 */
+	all = 0;
+	for (int i = PAWN | (color^1) ; i <= (KING | (color^1)) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color^1) == all);
+	const bitboard occ = All_Pieces(white) | All_Pieces(black);
+	bitboard oldAll = All_Pieces(color);
+#ifndef NO_TRANSPOSITION_TABLE
+#ifndef NO_KILLER_MOVE
+	if (mode != Perft){
+		if (killerMove != NULL_MOVE){
+			bitboard tmp = occ;
+			int killerFromSq = getTTMove_From(killerMove);
+			int killerToSq = getTTMove_To(killerMove);
+			bitboard killerFrom = bitboard(1) << killerFromSq;
+			bitboard killerTo = bitboard(1) << killerToSq;
+			bool killerMoveOk = true;
+			if (((killerTo & All_Pieces(color)) == bitboard(0)) && (All_Pieces(color) & killerFrom)){
+				if ((Pieces[PAWN | color] & killerFrom) == bitboard(0)){
+					int killerPiece = KNIGHT | color;
+					while ((Pieces[killerPiece] & killerFrom) == bitboard(0)) killerPiece += 2;
+					if ((killerPiece == (KING | color)) && ((KingMoves[killerFromSq] & killerTo) == bitboard(0))){
+						halfmoves = oldhm + 1;
+						Pieces[KING | color] = killerTo;
+						bitboard oldCastling = castling;
+						key ct = zobrist::castling[(castling*castlingsmagic)>>59];
+						castling &= castlingc<color>::deactrights;
+						Zobrist toggle = ct;
+						toggle ^= zobrist::keys[3+((color==black)?56:0)][KING | color];
+						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
+						if (killerFrom > killerTo) {
+							if ((oldCastling & castlingc<color>::KingSide & Pieces[ROOK | color]) && ((castlingc<color>::KingSideSpace & occ) == 0)){
+								kingSq = castlingc<color>::kingSqAfterKSC;
+								toggle ^= zobrist::keys[0+((color==black)?56:0)][ROOK | color];
+								toggle ^= zobrist::keys[2+((color==black)?56:0)][ROOK | color];
+								toggle ^= zobrist::keys[1+((color==black)?56:0)][KING | color];
+								Pieces[ROOK | color] ^= castlingc<color>::KSCRT;
+								All_Pieces(color) ^= castlingc<color>::KSCFT;
+								zobr ^= toggle;
+								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
+								Pieces[ROOK | color] ^= castlingc<color>::KSCRT;
+								All_Pieces(color) ^= castlingc<color>::KSCFT;
+							} else {
+								statistics(++ttError_Type1_SameHashKey);
+								killerMoveOk = false;
+							}
+						} else {
+							if ((oldCastling & castlingc<color>::QueenSide & Pieces[ROOK | color]) && ((castlingc<color>::QueenSideSpace & occ) == 0)){
+								kingSq = castlingc<color>::kingSqAfterQSC;
+								toggle ^= zobrist::keys[7+((color==black)?56:0)][ROOK | color];
+								toggle ^= zobrist::keys[4+((color==black)?56:0)][ROOK | color];
+								toggle ^= zobrist::keys[5+((color==black)?56:0)][KING | color];
+								Pieces[ROOK | color] ^= castlingc<color>::QSCRT;
+								All_Pieces(color) ^= castlingc<color>::QSCFT;
+								zobr ^= toggle;
+								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
+								Pieces[ROOK | color] ^= castlingc<color>::QSCRT;
+								All_Pieces(color) ^= castlingc<color>::QSCFT;
+							} else {
+								statistics(++ttError_Type1_SameHashKey);
+								killerMoveOk = false;
+							}
+						}
+						zobr ^= toggle;
+						Pieces[KING | color] = killerFrom;
+						castling = oldCastling;
+						if (killerMoveOk) {
+							if( score >= beta ) {
+								halfmoves = oldhm;
+								zobr ^= zobrist::blackKey;
+								enPassant = tmpEnPassant;
+								if (enPassant) zobr ^= zobrist::enPassant[enSq];
+								if (color==black) --fullmoves;
+								addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, killerMove, beta);
+								statistics(++betaCutOff);
+								statistics(++cutOffByKillerMove);
+								return beta;			// fail-hard beta-cutoff
+							}
+							pvFound = true;
+							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
+								alpha = score;	//Better move found!
+								bestTF = (killerFrom > killerTo) ? castlingc<color>::KSCKT : castlingc<color>::QSCKT;
+							}
+						}
+						halfmoves = 0;
+						kingSq = castlingc<color>::kingSqBefore;
+					} else {
+						int capturedPiece = QUEEN | (color ^ 1);
+						while (((Pieces[capturedPiece] & killerTo) == 0) && capturedPiece >= 0) capturedPiece -= 2;
+						bitboard tf = killerFrom | killerTo;
+						Zobrist toggle = zobrist::keys[killerFromSq][killerPiece];
+						toggle ^= zobrist::keys[killerToSq][killerPiece];
+						bitboard oldCastling = castling;
+						if (killerPiece == (ROOK | color)) {
+							toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
+							castling &= ~killerFrom;
+							toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
+						} else if (killerPiece == (KING | color)){
+							toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
+							castling &= castlingc<color>::deactrights;
+							toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
+						}
+						int scoreD = 0;
+						if (capturedPiece >= 0){
+							halfmoves = 0;
+							toggle ^= zobrist::keys[killerToSq][capturedPiece];
+							scoreD = Value::piece[capturedPiece];
+							Pieces[capturedPiece] ^= killerTo;
+							All_Pieces(color ^ 1) ^= killerTo;
+						} else {
+							halfmoves = oldhm + 1;
+						}
+						Pieces[killerPiece] ^= tf;
+						All_Pieces(color) ^= tf;
+						pieceScore -= scoreD;
+						zobr ^= toggle;
+						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
+						zobr ^= toggle;
+						pieceScore += scoreD;
+						Pieces[killerPiece] ^= tf;
+						All_Pieces(color) ^= tf;
+						if (capturedPiece >= 0){
+							Pieces[capturedPiece] ^= killerTo;
+							All_Pieces(color ^ 1) ^= killerTo;
+						}
+						castling = oldCastling;
+						if( score >= beta ) {
+							halfmoves = oldhm;
+							zobr ^= zobrist::blackKey;
+							enPassant = tmpEnPassant;
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
+							if (color==black) --fullmoves;
+
+							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, killerMove, beta);
+							statistics(++betaCutOff);
+							statistics(++cutOffByKillerMove);
+							return beta;			// fail-hard beta-cutoff
+						}
+						pvFound = true;
+						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
+							alpha = score;	//Better move found!
+
+							bestTF =  tf;
+							ASSUME(bestTF & All_Pieces(color)); //FIXME REMOVE
+							bestProm = 0;
+						}
+						halfmoves = 0;
+					}
+				} else {
+					int promSp = getTTMove_Prom_spec(killerMove);
+					int toPiece = getTTMove_fromPS_P(promSp);
+					if ((toPiece & colormask) == color){
+						int diff = killerToSq - killerFromSq;
+						bitboard tf = killerFrom ^ killerTo;
+						//-7 = 1..11 1001, -8 = 1..11 1000, -9 1..11 0111
+						if (diff & 1) {
+							int capturedPiece, capturedSq;
+							bitboard capturedPos;
+							if (promSp <= 0xF) {
+								capturedPiece = QUEEN | (color ^ 1);
+								while ((capturedPiece >= 0) && ((Pieces[capturedPiece] & killerTo) == 0)) capturedPiece -= 2;
+								if (capturedPiece < 0){
+									statistics(++ttError_Type1_SameHashKey);
+									killerMoveOk = false;
+								} else {
+									capturedPos = killerTo;
+									capturedSq = killerToSq;
+								}
+							} else if ((tmpEnPassant == ((color == white) ? (killerTo >> 8) : (killerTo << 8)))
+									&& (Pieces[PAWN | (color ^ 1)] & tmpEnPassant)
+									&& ((All_Pieces(color) & killerTo) == 0)){
+								capturedPos = tmpEnPassant;
+								capturedPiece = PAWN | (color ^ 1);
+								capturedSq = (color == white) ? (killerToSq - 8) : (killerToSq + 8);
+								ASSUME(toPiece == (PAWN | color));
+								ASSUME(Pieces[PAWN | (color ^ 1)] & capturedPos);
+								ASSUME(All_Pieces(color ^ 1) & capturedPos);
+							} else {
+								statistics(++ttError_Type1_SameHashKey);
+								killerMoveOk = false;
+							}
+							if (killerMoveOk) {
+								ASSUME((toPiece & colormask) == color);
+								int scoreD = Value::piece[capturedPiece] + Value::piece[PAWN | color] - Value::piece[toPiece];
+								Zobrist toggle = zobrist::keys[capturedSq][capturedPiece];
+								toggle ^= zobrist::keys[killerFromSq][PAWN | color];
+								toggle ^= zobrist::keys[killerToSq][toPiece];
+								//ASSUME((promSp <= 0xF) || (Pieces[capturedPiece] & capturedPos));
+								//ASSUME((promSp > 0xF) || (Pieces[capturedPiece] & capturedPos));
+								Pieces[capturedPiece] ^= capturedPos;
+								//ASSUME(Pieces[PAWN | color] & killerFrom);
+								Pieces[PAWN | color] ^= killerFrom;
+								//ASSUME((Pieces[toPiece] & killerTo)==0);
+								Pieces[toPiece] ^= killerTo;
+								All_Pieces(color) ^= tf;
+								All_Pieces(color ^ 1) ^= capturedPos;
+								pieceScore -= scoreD;
+								zobr ^= toggle;
+								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
+								zobr ^= toggle;
+								pieceScore += scoreD;
+								Pieces[capturedPiece] ^= capturedPos;
+								Pieces[PAWN | color] ^= killerFrom;
+								Pieces[toPiece] ^= killerTo;
+								All_Pieces(color) ^= tf;
+								All_Pieces(color ^ 1) ^= capturedPos;
+								if( score >= beta ) {
+									halfmoves = oldhm;
+									zobr ^= zobrist::blackKey;
+									enPassant = tmpEnPassant;
+									if (enPassant) zobr ^= zobrist::enPassant[enSq];
+									if (color==black) --fullmoves;
+									addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, killerMove, beta);
+									statistics(++betaCutOff);
+									statistics(++cutOffByKillerMove);
+									return beta;			// fail-hard beta-cutoff
+								}
+								pvFound = true;
+								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
+									alpha = score;	//Better move found!
+									bestTF = tf;
+									bestProm = promSp;
+								}
+							}
+						} else {
+							int scoreD = Value::piece[PAWN | color] - Value::piece[toPiece];
+							Zobrist toggle = zobrist::keys[killerFromSq][PAWN | color];
+							toggle ^= zobrist::keys[killerToSq][toPiece];
+							if (killerToSq == (killerFromSq + ((color == white) ? 16 : -16))){
+								toggle ^= zobrist::enPassant[7&(killerFromSq + ((color == white) ? 8 : -8))];
+								enPassant = ((color == white) ? (killerFrom << 8) : (killerFrom >> 8));
+							}
+							ASSUME(Pieces[PAWN | color] & killerFrom);
+							Pieces[PAWN | color] ^= killerFrom;
+							ASSUME(toPiece >= (PAWN | white));
+							ASSUME(toPiece <= (KING | black));
+							if ((toPiece & colormask) != color) std::cout << std::dec << toPiece << std::endl;
+							ASSUME((toPiece & colormask) == color);
+							ASSUME((Pieces[toPiece] & killerTo) == 0);
+							Pieces[toPiece] ^= killerTo;
+							All_Pieces(color) ^= tf;
+							pieceScore -= scoreD;
+							zobr ^= toggle;
+							searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
+							zobr ^= toggle;
+							pieceScore += scoreD;
+							Pieces[PAWN | color] ^= killerFrom;
+							Pieces[toPiece] ^= killerTo;
+							All_Pieces(color) ^= tf;
+							if( score >= beta ) {
+								halfmoves = oldhm;
+								zobr ^= zobrist::blackKey;
+								enPassant = tmpEnPassant;
+								if (enPassant) zobr ^= zobrist::enPassant[enSq];
+								if (color==black) --fullmoves;
+								addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, killerMove, beta);
+								statistics(++betaCutOff);
+								statistics(++cutOffByKillerMove);
+								return beta;			// fail-hard beta-cutoff
+							}
+							pvFound = true;
+							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
+								alpha = score;	//Better move found!
+								bestTF = tf;
+								bestProm = promSp;
+							}
+							enPassant = 0;
+						}
+					} else {
+						statistics(++ttError_Type1_SameHashKey);
+					}
+				}
+			} else {
+				statistics(++ttError_Type1_SameHashKey);
+			}
+		}
+	}
+#endif
+#endif
+	//TODO add heuristics
+	bitboard checkedBy = kingIsAttackedBy<color>(occ, kingSq);
+	//FIXME REMOVE
+	all = 0;
+	for (int i = PAWN | color ; i <= (KING | color) ; i += 2) all |= Pieces[i];
+	for (int i = 0 ; i <= (KING | black) ; ++i) if (oldP[i] != Pieces[i]) std::cout << i << std::hex << Pieces[i] << oldP[i] << std::endl;
+	ASSUME(oldAll == All_Pieces(color));
+	ASSUME(all == oldAll);
 	if (checkedBy == bitboard(0)){
-		bitboard nPinnedPawn = getNPinnedPawns<color>(occ);
+		bitboard nPinnedPawn = getNPinnedPawns<color>(occ, kingSq);
 		bitboard attacking[2] = {Pieces[PAWN | color], Pieces[PAWN | color]};
-		int kingFL = 7 & kingSq[color];
-		int kingRK = kingSq[color] >> 3;
-		int kingMD = 7-kingFL+kingRK;
+		int kingFL = 7 & kingSq;
+		int kingRK = kingSq >> 3;
 		int kingAD = kingFL+kingRK;
 		kingFL ^= 7;
+		int kingMD = kingFL+kingRK;	//7-(kingFL^7)+kingRK
 
 		if (color==white){
 			attacking[0] &= nPinnedPawn | filled::antiDiag[kingAD];
@@ -468,16 +790,17 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		for (int captured = QUEEN | (color^1); captured >= 0 ; captured-=2){
 			pieceScore -= Value::piece[captured];
 			for (int diff = ((color==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
-				tmp = attacking[at] & Pieces[captured];
+				bitboard tmp = attacking[at] & Pieces[captured];
 				while (tmp){
-					to = tmp & -tmp;
-					from = to;
+					unsigned long int toSq;
+					bitboard to = tmp & -tmp;
+					bitboard from = to;
 					if (color == white){
 						from >>= diff;
 					} else {
 						from <<= -diff;
 					}
-					tf = to | from;
+					bitboard tf = to | from;
 					Pieces[captured] ^= to;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
@@ -502,11 +825,13 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							All_Pieces(color ^ 1) ^= to;
 							pieceScore += Value::piece[PAWN | color];
 							pieceScore += Value::piece[captured];
+
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
+
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, prom), beta);
 							statistics(++betaCutOff);
 							return beta;			// fail-hard beta-cutoff
@@ -550,17 +875,18 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		for (int captured = QUEEN | (color^1); captured >= 0 ; captured-=2){
 			pieceScore -= Value::piece[captured];
 			for (int diff = ((color==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
-				tmp = attacking[at] & Pieces[captured];
+				bitboard tmp = attacking[at] & Pieces[captured];
 				while (tmp){
-					to = tmp & -tmp;
+					unsigned long int toSq;
+					bitboard to = tmp & -tmp, from;
 					if (color == white){
 						from = to >> diff;
 					} else {
 						from = to << -diff;
 					}
-					tf = to | from;
+					bitboard tf = to | from;
 					square(&toSq, to);
-					toggle = zobrist::keys[toSq][PAWN | color];
+					Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 					toggle ^= zobrist::keys[toSq-diff][PAWN | color];
 					toggle ^= zobrist::keys[toSq][captured];
 					Pieces[PAWN | color] ^= tf;
@@ -580,7 +906,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
 						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+						if (enPassant) zobr ^= zobrist::enPassant[enSq];
 						if (color==black) --fullmoves;
 						addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, PAWN | color), beta);
 						statistics(++betaCutOff);
@@ -599,7 +925,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		}
 		for (int diff = ((color==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 			if ((attacking[at] & tmpEnPassant) != 0){
-				tf = tmpEnPassant;
+				bitboard tf = tmpEnPassant;
 				bitboard cp = tmpEnPassant;
 				if (color == white){
 					tf |= tmpEnPassant >> diff;
@@ -608,8 +934,9 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					tf |= tmpEnPassant << -diff;
 					cp <<= 8;
 				}
+				unsigned long int toSq;
 				square(&toSq, tmpEnPassant);
-				toggle = zobrist::keys[toSq][PAWN | color];
+				Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 				toggle ^= zobrist::keys[toSq-diff][PAWN | color];
 				toggle ^= zobrist::keys[toSq+(color==white)?-8:8][PAWN | (color ^ 1)];
 				pieceScore -= Value::piece[PAWN | (color ^ 1)];
@@ -629,7 +956,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					halfmoves = oldhm;
 					zobr ^= zobrist::blackKey;
 					enPassant = tmpEnPassant;
-					if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+					if (enPassant) zobr ^= zobrist::enPassant[enSq];
 					if (color==black) --fullmoves;
 					addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, PAWN | color | TTMove_EnPassantPromFlag), beta);
 					statistics(++betaCutOff);
@@ -647,7 +974,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		bitboard pawnsToForward = Pieces[PAWN | color];
 		if (mode < quiescenceMask){
 			pawnsToForward &= nPinnedPawn | filled::file[kingFL];
-			tmp = pawnsToForward;
+			bitboard tmp = pawnsToForward;
 			if (color == white){
 				tmp = lastRank_w & (tmp << 8);
 			} else {
@@ -656,14 +983,15 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			tmp &= empty;
 			pieceScore -= Value::piece[PAWN | color];
 			while (tmp){
-				to = tmp & -tmp;
-				from = to;
+				bitboard to = tmp & -tmp;
+				bitboard from = to;
 				if (color == white){
 					from >>= 8;
 				} else {
 					from <<= 8;
 				}
-				tf = to | from;
+				bitboard tf = to | from;
+				unsigned long int toSq;
 				square(&toSq, to);
 				All_Pieces(color) ^= tf;
 				Pieces[PAWN | color] ^= from;
@@ -685,7 +1013,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
 						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+						if (enPassant) zobr ^= zobrist::enPassant[enSq];
 						if (color==black) --fullmoves;
 						addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, prom), beta);
 						statistics(++betaCutOff);
@@ -710,58 +1038,66 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 #else
 #define SIZE 16
 #endif
-		bitboard attack[SIZE], frombb[SIZE], xRay;
+		bitboard attack[SIZE], frombb[SIZE];
 		unsigned long int piecet[SIZE], fromSq[SIZE], n(0);
 #undef SIZE
-		int oldKSq = kingSq[color], dr;
-		bitboard KAttack = KingMoves[kingSq[color]];
-		tmp = Pieces[KNIGHT | color];
-		while (tmp){
-			frombb[n] = tmp & -tmp;
-			square(fromSq+n, frombb[n]);
-			dr = direction[kingSq[color]][fromSq[n]];
-			//A pinned knight has no legal moves.
-			if (dr == WRONG_PIECE || (rays[kingSq[color]][fromSq[n]] & occ) != 0 ||
-					(((xRay = getChecker<color>(occ, fromSq[n])) & Pieces[QUEEN | (color ^ 1)]) == 0
-							&& (xRay & Pieces[dr | (color ^ 1)]) == 0)) {
-				attack[n] = KnightMoves[fromSq[n]];
-				piecet[n] = KNIGHT | color;
-				++n;
+		bitboard KAttack = KingMoves[kingSq];
+		unsigned long int firstRook, firstQueen;
+		TargetSquareGenerator:{
+			int dr;
+			bitboard tmp = Pieces[KNIGHT | color];
+			//TODO Only knights that are not pinned can move, so tmp's population is predictable from here
+			while (tmp){
+				bitboard xRay;
+				frombb[n] = tmp & -tmp;
+				square(fromSq+n, frombb[n]);
+				dr = direction[kingSq][fromSq[n]];
+				//A pinned knight has no legal moves.
+				if (dr == WRONG_PIECE || (rays[kingSq][fromSq[n]] & occ) != 0 ||
+						(((xRay = getChecker<color>(occ, fromSq[n], kingSq)) & Pieces[QUEEN | (color ^ 1)]) == 0
+								&& (xRay & Pieces[dr | (color ^ 1)]) == 0)) {
+					attack[n] = KnightMoves[fromSq[n]];
+					piecet[n] = KNIGHT | color;
+					++n;
+				}
+				tmp &= tmp - 1;
 			}
-			tmp &= tmp - 1;
-		}
-		//A pinned piece can only move between the pinner and the king
-		tmp = Pieces[BISHOP | color];
-		while (tmp){
-			frombb[n] = tmp & -tmp;
-			square(fromSq+n, frombb[n]);
-			attack[n] = bishopAttacks(occ, fromSq[n]);
-			piecet[n] = BISHOP | color;
-			filterAttackBB<color>(occ, fromSq[n], attack[n]);
-			++n;
-			tmp &= tmp - 1;
-		}
-		unsigned long int firstRook = n;
-		tmp = Pieces[ROOK | color];
-		while (tmp){
-			frombb[n] = tmp & -tmp;
-			square(fromSq+n, frombb[n]);
-			attack[n] = rookAttacks(occ, fromSq[n]);
-			piecet[n] = ROOK | color;
-			filterAttackBB<color>(occ, fromSq[n], attack[n]);
-			++n;
-			tmp &= tmp - 1;
-		}
-		unsigned long int firstQueen = n;
-		tmp = Pieces[QUEEN | color];
-		while (tmp){
-			frombb[n] = tmp & -tmp;
-			square(fromSq+n, frombb[n]);
-			attack[n] = queenAttacks(occ, fromSq[n]);
-			piecet[n] = QUEEN | color;
-			filterAttackBB<color>(occ, fromSq[n], attack[n]);
-			++n;
-			tmp &= tmp - 1;
+			//TODO A pinned piece can only move between the pinner and the king
+			//Also a bishop can only move if he is pinned by a queen or bishop, if he is pinned
+			//a rook can only move if he is pinned by a queen or rook, if he is pinned
+			//the pinner will be capturable by the pinned piece!
+			tmp = Pieces[BISHOP | color];
+			while (tmp){
+				frombb[n] = tmp & -tmp;
+				square(fromSq+n, frombb[n]);
+				attack[n] = bishopAttacks(occ, fromSq[n]);
+				piecet[n] = BISHOP | color;
+				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
+				++n;
+				tmp &= tmp - 1;
+			}
+			firstRook = n;
+			tmp = Pieces[ROOK | color];
+			while (tmp){
+				frombb[n] = tmp & -tmp;
+				square(fromSq+n, frombb[n]);
+				attack[n] = rookAttacks(occ, fromSq[n]);
+				piecet[n] = ROOK | color;
+				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
+				++n;
+				tmp &= tmp - 1;
+			}
+			firstQueen = n;
+			tmp = Pieces[QUEEN | color];
+			while (tmp){
+				frombb[n] = tmp & -tmp;
+				square(fromSq+n, frombb[n]);
+				attack[n] = queenAttacks(occ, fromSq[n]);
+				piecet[n] = QUEEN | color;
+				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
+				++n;
+				tmp &= tmp - 1;
+			}
 		}
 		//frombb[n] = Pieces[KING | color];
 		//fromSq[n] = kingSq[color];//square(frombb[n]);
@@ -771,23 +1107,24 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 				pieceScore -= Value::piece[captured];
 				for (unsigned long int i = 0 ; i < n ; ++i) {
-					tmp = Pieces[captured] & attack[i];
+					bitboard tmp = Pieces[captured] & attack[i];
 					while (tmp){
-						to = tmp & -tmp;
-						tf = to | frombb[i];
-						Pieces[captured] ^= to;
-						All_Pieces(color) ^= tf;
-						All_Pieces(color ^ 1) ^= to;
+						bitboard to = tmp & -tmp;
+						bitboard tf = to | frombb[i];
+						unsigned long int toSq;
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][captured];
+						Zobrist toggle = zobrist::keys[toSq][captured];
 						toggle ^= zobrist::keys[toSq][piecet[i]];
 						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
+						Pieces[captured] ^= to;
 						Pieces[piecet[i]] ^= tf;
+						All_Pieces(color) ^= tf;
+						All_Pieces(color ^ 1) ^= to;
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
-						Pieces[piecet[i]] ^= tf;
 						Pieces[captured] ^= to;
+						Pieces[piecet[i]] ^= tf;
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
 						if( score >= beta ) {
@@ -795,7 +1132,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -809,19 +1146,20 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						tmp &= tmp - 1;
 					}
 				}
-				tmp = Pieces[captured] & KAttack;
+				bitboard tmp = Pieces[captured] & KAttack;
 				while (tmp){
-					to = tmp & -tmp;
-					square(kingSq+color, to);
-					tf = to | Pieces[KING | color];
+					bitboard to = tmp & -tmp;
+					unsigned long int nkSq;
+					square(&nkSq, to);
+					bitboard tf = to | Pieces[KING | color];
 					Pieces[captured] ^= to;
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
-					if (validPosition<color>()){
-						toggle = zobrist::keys[kingSq[color]][captured];
-						toggle ^= zobrist::keys[kingSq[color]][KING | color];
-						toggle ^= zobrist::keys[oldKSq][KING | color];
+					if (validPosition<color>(nkSq)){
+						Zobrist toggle = zobrist::keys[kingSq][captured];
+						toggle ^= zobrist::keys[kingSq][KING | color];
+						toggle ^= zobrist::keys[nkSq][KING | color];
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
@@ -832,12 +1170,10 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							All_Pieces(color ^ 1) ^= to;
 							pieceScore += Value::piece[captured];
 
-							kingSq[color] = oldKSq;
-
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -855,20 +1191,19 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					All_Pieces(color ^ 1) ^= to;
 					tmp &= tmp - 1;
 				}
-				kingSq[color] = oldKSq;
 				pieceScore += Value::piece[captured];
 			}
 
-			halfmoves = oldhm + 1;
 			if (mode < quiescenceMask){
-				//normal moves of non-Pawns
+				halfmoves = oldhm + 1;
 				for (unsigned long int i = 0 ; i < n ; ++i) {
-					tmp = attack[i] & empty;
+					bitboard tmp = attack[i] & empty;
 					while (tmp){
-						to = tmp & -tmp;
-						tf = to | frombb[i];
+						bitboard to = tmp & -tmp;
+						bitboard tf = to | frombb[i];
+						unsigned long int toSq;
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][piecet[i]];
+						Zobrist toggle = zobrist::keys[toSq][piecet[i]];
 						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
 						All_Pieces(color) ^= tf;
 						Pieces[piecet[i]] ^= tf;
@@ -881,7 +1216,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -895,16 +1230,17 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						tmp &= tmp - 1;
 					}
 				}
-				tmp = KAttack & empty;
+				bitboard tmp = KAttack & empty;
 				while (tmp){
-					to = tmp & -tmp;
-					square(kingSq+color, to);
-					tf = to | Pieces[KING | color];
+					bitboard to = tmp & -tmp;
+					unsigned long int nkSq;
+					square(&nkSq, to);
+					bitboard tf = to | Pieces[KING | color];
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
-					if (validPosition<color>()){
-						toggle = zobrist::keys[kingSq[color]][KING | color];
-						toggle ^= zobrist::keys[oldKSq][KING | color];
+					if (validPosition<color>(nkSq)){
+						Zobrist toggle = zobrist::keys[kingSq][KING | color];
+						toggle ^= zobrist::keys[nkSq][KING | color];
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
@@ -912,12 +1248,10 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							Pieces[KING | color] ^= tf;
 							All_Pieces(color) ^= tf;
 
-							kingSq[color] = oldKSq;
-
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -933,29 +1267,29 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					All_Pieces(color) ^= tf;
 					tmp &= tmp - 1;
 				}
-				kingSq[color] = oldKSq;
 			}
 		} else {
 			bitboard oldcastling = castling;
 			key ct = zobrist::castling[(castling*castlingsmagic)>>59];
 			key ct2;
-			unsigned long int i = 0;
+			unsigned long int i;
 			for (int captured = QUEEN | (color ^ 1); captured >= 0 ; captured -= 2){
 				pieceScore -= Value::piece[captured];
 				for (i = 0; i < firstRook ; ++i) {
-					tmp = Pieces[captured] & attack[i];
+					bitboard tmp = Pieces[captured] & attack[i];
 					while (tmp){
-						to = tmp & -tmp;
-						tf = to | frombb[i];
+						bitboard to = tmp & -tmp;
+						bitboard tf = to | frombb[i];
+						unsigned long int toSq;
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][captured];
+						Zobrist toggle = zobrist::keys[toSq][captured];
 						toggle ^= zobrist::keys[toSq][piecet[i]];
 						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
-						zobr ^= toggle;
 						Pieces[captured] ^= to;
 						Pieces[piecet[i]] ^= tf;
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
+						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[captured] ^= to;
@@ -968,7 +1302,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -987,12 +1321,13 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					castling &= ~frombb[i];
 					ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
 					zobr ^= ct2;
-					tmp = Pieces[captured] & attack[i];
+					bitboard tmp = Pieces[captured] & attack[i];
 					while (tmp){
-						to = tmp & -tmp;
-						tf = to | frombb[i];
+						bitboard to = tmp & -tmp;
+						bitboard tf = to | frombb[i];
+						unsigned long int toSq;
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][captured];
+						Zobrist toggle = zobrist::keys[toSq][captured];
 						toggle ^= zobrist::keys[toSq][ROOK | color];
 						toggle ^= zobrist::keys[fromSq[i]][ROOK | color];
 						Pieces[captured] ^= to;
@@ -1015,7 +1350,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -1033,12 +1368,13 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				}
 				zobr ^= ct;
 				for (; i < n ; ++i) {
-					tmp = Pieces[captured] & attack[i];
+					bitboard tmp = Pieces[captured] & attack[i];
 					while (tmp){
-						to = tmp & -tmp;
-						tf = to | frombb[i];
+						bitboard to = tmp & -tmp;
+						bitboard tf = to | frombb[i];
+						unsigned long int toSq;
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][captured];
+						Zobrist toggle = zobrist::keys[toSq][captured];
 						toggle ^= zobrist::keys[toSq][QUEEN | color];
 						toggle ^= zobrist::keys[fromSq[i]][QUEEN | color];
 						Pieces[captured] ^= to;
@@ -1057,7 +1393,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -1075,19 +1411,20 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
 				zobr ^= ct;
 				zobr ^= ct2;
-				tmp = Pieces[captured] & KAttack;
+				bitboard tmp = Pieces[captured] & KAttack;
 				while (tmp){
-					to = tmp & -tmp;
-					square(kingSq+color, to);
-					tf = to | Pieces[KING | color];
+					bitboard to = tmp & -tmp;
+					unsigned long int nkSq;
+					square(&nkSq, to);
+					bitboard tf = to | Pieces[KING | color];
 					Pieces[captured] ^= to;
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
-					if (validPosition<color>()){
-						toggle = zobrist::keys[kingSq[color]][captured];
-						toggle ^= zobrist::keys[kingSq[color]][KING | color];
-						toggle ^= zobrist::keys[oldKSq][KING | color];
+					if (validPosition<color>(nkSq)){
+						Zobrist toggle = zobrist::keys[nkSq][captured];
+						toggle ^= zobrist::keys[nkSq][KING | color];
+						toggle ^= zobrist::keys[kingSq][KING | color];
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
@@ -1101,12 +1438,10 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							zobr ^= ct2;
 							pieceScore += Value::piece[captured];
 
-							kingSq[color] = oldKSq;
-
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -1124,24 +1459,22 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					All_Pieces(color ^ 1) ^= to;
 					tmp &= tmp - 1;
 				}
-				kingSq[color] = oldKSq;
 				castling = oldcastling;
 				zobr ^= ct;
 				zobr ^= ct2;
 				pieceScore += Value::piece[captured];
 			}
-			halfmoves = oldhm + 1;
 			if (mode < quiescenceMask){
-				if ((castling & (castlingc<color>::KingSide) & Pieces[ROOK | color])!=0 && (castlingc<color>::KingSideSpace & occ)==0 && notAttacked<color^1>(castlingc<color>::KSCPassing, castlingc<color>::KSCPassingSq) && validPosition<color>()){
+				halfmoves = oldhm + 1;
+				if ((castling & (castlingc<color>::KingSide) & Pieces[ROOK | color]) && (castlingc<color>::KingSideSpace & occ)==0 && notAttacked<color^1>(castlingc<color>::KSCPassing, castlingc<color>::KSCPassingSq) && validPosition<color>(kingSq)){
 					Pieces[KING | color] ^= castlingc<color>::KSCKT;
 					All_Pieces(color) ^= castlingc<color>::KSCFT;
-					kingSq[color] = castlingc<color>::kingSqAfterKSC;
-					if (validPosition<color>()){
+					if (validPosition<color>(castlingc<color>::kingSqAfterKSC)){
 						castling &= castlingc<color>::deactrights;
-						toggle = zobrist::keys[0][ROOK | color];
-						toggle ^= zobrist::keys[2][ROOK | color];
-						toggle ^= zobrist::keys[3][KING | color];
-						toggle ^= zobrist::keys[1][KING | color];
+						Zobrist toggle = zobrist::keys[0+((color==black)?56:0)][ROOK | color];
+						toggle ^= zobrist::keys[2+((color==black)?56:0)][ROOK | color];
+						toggle ^= zobrist::keys[3+((color==black)?56:0)][KING | color];
+						toggle ^= zobrist::keys[1+((color==black)?56:0)][KING | color];
 						toggle ^= ct;
 						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						Pieces[ROOK | color] ^= castlingc<color>::KSCRT;
@@ -1154,12 +1487,10 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							Pieces[KING | color] ^= castlingc<color>::KSCKT;
 							All_Pieces(color) ^= castlingc<color>::KSCFT;
 
-							kingSq[color] = castlingc<color>::kingSqBefore;
-
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(castlingc<color>::KSCKT, 0), beta);
 							statistics(++betaCutOff);
@@ -1171,20 +1502,19 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							bestTF = castlingc<color>::KSCKT;
 						}
 					}
-					kingSq[color] = castlingc<color>::kingSqBefore;
+					kingSq = castlingc<color>::kingSqBefore;
 					Pieces[KING | color] ^= castlingc<color>::KSCKT;
 					All_Pieces(color) ^= castlingc<color>::KSCFT;
 				}
-				if ((castling & (castlingc<color>::QueenSide) & Pieces[ROOK | color])!=0 && (castlingc<color>::QueenSideSpace & occ)==0 && notAttacked<color^1>(castlingc<color>::QSCPassing, castlingc<color>::QSCPassingSq) && validPosition<color>()){
+				if ((castling & (castlingc<color>::QueenSide) & Pieces[ROOK | color])!=0 && (castlingc<color>::QueenSideSpace & occ)==0 && notAttacked<color^1>(castlingc<color>::QSCPassing, castlingc<color>::QSCPassingSq) && validPosition<color>(kingSq)){
 					Pieces[KING | color] ^= castlingc<color>::QSCKT;
 					All_Pieces(color) ^= castlingc<color>::QSCFT;
-					kingSq[color] = castlingc<color>::kingSqAfterQSC;
-					if (validPosition<color>()){
+					if (validPosition<color>(castlingc<color>::kingSqAfterQSC)){
 						castling &= castlingc<color>::deactrights;
-						toggle = zobrist::keys[7][ROOK | color];
-						toggle ^= zobrist::keys[4][ROOK | color];
-						toggle ^= zobrist::keys[3][KING | color];
-						toggle ^= zobrist::keys[5][KING | color];
+						Zobrist toggle = zobrist::keys[7+((color==black)?56:0)][ROOK | color];
+						toggle ^= zobrist::keys[4+((color==black)?56:0)][ROOK | color];
+						toggle ^= zobrist::keys[3+((color==black)?56:0)][KING | color];
+						toggle ^= zobrist::keys[5+((color==black)?56:0)][KING | color];
 						toggle ^= ct;
 						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						Pieces[ROOK | color] ^= castlingc<color>::QSCRT;
@@ -1197,12 +1527,10 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							Pieces[KING | color] ^= castlingc<color>::QSCKT;
 							All_Pieces(color) ^= castlingc<color>::QSCFT;
 
-							kingSq[color] = castlingc<color>::kingSqBefore;
-
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(castlingc<color>::QSCKT, 0), beta);
 							statistics(++betaCutOff);
@@ -1214,18 +1542,18 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							bestTF = castlingc<color>::QSCKT;
 						}
 					}
-					kingSq[color] = castlingc<color>::kingSqBefore;
 					Pieces[KING | color] ^= castlingc<color>::QSCKT;
 					All_Pieces(color) ^= castlingc<color>::QSCFT;
 				}
 
 				for (i = 0; i < firstRook ; ++i) {
-					tmp = attack[i] & empty;
+					bitboard tmp = attack[i] & empty;
 					while (tmp){
-						to = tmp & -tmp;
-						tf = to | frombb[i];
+						bitboard to = tmp & -tmp;
+						bitboard tf = to | frombb[i];
+						unsigned long int toSq;
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][piecet[i]];
+						Zobrist toggle = zobrist::keys[toSq][piecet[i]];
 						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
 						All_Pieces(color) ^= tf;
 						Pieces[piecet[i]] ^= tf;
@@ -1238,7 +1566,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -1257,12 +1585,13 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					castling &= ~frombb[i];
 					ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
 					zobr ^= ct2;
-					tmp = attack[i] & empty;
+					bitboard tmp = attack[i] & empty;
 					while (tmp){
-						to = tmp & -tmp;
-						tf = to | frombb[i];
+						bitboard to = tmp & -tmp;
+						bitboard tf = to | frombb[i];
+						unsigned long int toSq;
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][ROOK | color];
+						Zobrist toggle = zobrist::keys[toSq][ROOK | color];
 						toggle ^= zobrist::keys[fromSq[i]][ROOK | color];
 						All_Pieces(color) ^= tf;
 						Pieces[ROOK | color] ^= tf;
@@ -1279,7 +1608,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -1297,12 +1626,13 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				}
 				zobr ^= ct;
 				for (; i < n ; ++i) {
-					tmp = attack[i] & empty;
+					bitboard tmp = attack[i] & empty;
 					while (tmp){
-						to = tmp & -tmp;
-						tf = to | frombb[i];
+						bitboard to = tmp & -tmp;
+						bitboard tf = to | frombb[i];
+						unsigned long int toSq;
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][QUEEN | color];
+						Zobrist toggle = zobrist::keys[toSq][QUEEN | color];
 						toggle ^= zobrist::keys[fromSq[i]][QUEEN | color];
 						All_Pieces(color) ^= tf;
 						Pieces[QUEEN | color] ^= tf;
@@ -1315,7 +1645,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -1333,16 +1663,17 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
 				zobr ^= ct;
 				zobr ^= ct2;
-				tmp = KAttack & empty;
+				bitboard tmp = KAttack & empty;
 				while (tmp){
-					to = tmp & -tmp;
-					square(kingSq+color, to);
-					tf = to | Pieces[KING | color];
+					bitboard to = tmp & -tmp;
+					bitboard tf = to | Pieces[KING | color];
+					unsigned long int nkSq;
+					square(&nkSq, to);
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
-					if (validPosition<color>()){
-						toggle = zobrist::keys[kingSq[color]][KING | color];
-						toggle ^= zobrist::keys[oldKSq][KING | color];
+					if (validPosition<color>(nkSq)){
+						Zobrist toggle = zobrist::keys[nkSq][KING | color];
+						toggle ^= zobrist::keys[kingSq][KING | color];
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
@@ -1354,12 +1685,10 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 							zobr ^= ct;
 							zobr ^= ct2;
 
-							kingSq[color] = oldKSq;
-
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -1375,7 +1704,6 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					All_Pieces(color) ^= tf;
 					tmp &= tmp - 1;
 				}
-				kingSq[color] = oldKSq;
 				castling = oldcastling;
 				zobr ^= ct;
 				zobr ^= ct2;
@@ -1384,7 +1712,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 		if (mode < quiescenceMask){
 			halfmoves = 0;
 
-			tmp = pawnsToForward;
+			bitboard tmp = pawnsToForward;
 			if (color == white){
 				tmp <<= 8;
 				tmp &= notlastRank_w;
@@ -1394,14 +1722,15 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			}
 			tmp &= empty;
 			while (tmp){
-				to = tmp & -tmp;
+				bitboard to = tmp & -tmp, tf;
 				if (color == white){
 					tf = to | (to >> 8);
 				} else {
 					tf = to | (to << 8);
 				}
+				unsigned long int toSq;
 				square(&toSq, to);
-				toggle = zobrist::keys[toSq][PAWN | color];
+				Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 				toggle ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
 				All_Pieces(color) ^= tf;
 				Pieces[PAWN | color] ^= tf;
@@ -1414,7 +1743,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					halfmoves = oldhm;
 					zobr ^= zobrist::blackKey;
 					enPassant = tmpEnPassant;
-					if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+					if (enPassant) zobr ^= zobrist::enPassant[enSq];
 					if (color==black) --fullmoves;
 					addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, PAWN | color), beta);
 					statistics(++betaCutOff);
@@ -1434,8 +1763,8 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			} else {
 				tmp = ( ( ( ( tmp & pstartRank_b ) >> 8 ) & empty ) >> 8 ) & empty;
 			}
-			while (tmp != 0){
-				to = tmp & -tmp;
+			while (tmp){
+				bitboard to = tmp & -tmp, tf;
 				if (color == white){
 					tf = to | (to >> 16);
 					enPassant = to >> 8;
@@ -1443,9 +1772,10 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					tf = to | (to << 16);
 					enPassant = to << 8;
 				}
+				unsigned long int toSq, tmpSq;
 				square(&toSq, to);
 				square(&tmpSq, enPassant);
-				toggle = zobrist::keys[toSq][PAWN | color];
+				Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 				toggle ^= zobrist::keys[toSq+((color==white)?-16:16)][PAWN | color];
 				toggle ^= zobrist::enPassant[7&tmpSq];
 				All_Pieces(color) ^= tf;
@@ -1459,7 +1789,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					halfmoves = oldhm;
 					zobr ^= zobrist::blackKey;
 					enPassant = tmpEnPassant;
-					if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+					if (enPassant) zobr ^= zobrist::enPassant[enSq];
 					if (color==black) --fullmoves;
 					addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, PAWN | color), beta);
 					statistics(++betaCutOff);
@@ -1476,11 +1806,12 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			enPassant = bitboard(0);
 		}
 	} else {
-		unsigned long int fromSq;
+		//bitboard tmp = occ;
+		//unsigned long int fromSq;
 		if (( checkedBy & (checkedBy - 1) ) == bitboard(0)){
 			//1) Capturing the attacking piece
+			unsigned long int toSq;
 			square(&toSq, checkedBy);
-			bitboard att;
 			int attacker = QUEEN | (color ^ 1);
 			while ((Pieces[attacker] & checkedBy)==0) attacker -= 2;
 			zobr ^= zobrist::keys[toSq][attacker];
@@ -1489,17 +1820,13 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			pieceScore -= Value::piece[attacker];
 			if ((checkedBy & (color==white?lastRank_w:lastRank_b)) == 0){
 				for (int diff = (color==white?7:-9), f = 7 ; f >= 0 ; diff += 2, f -= 7){
-					if (color == white){
-						att = (checkedBy >> diff);
-					} else {
-						att = (checkedBy << -diff);
-					}
+					bitboard att = (color == white) ? (checkedBy >> diff) : (checkedBy << -diff);
 					att &= notFilled::file[f] & Pieces[PAWN | color];
-					if (att != bitboard(0)){
-						tf = checkedBy | (att & -att);
+					if (att){
+						bitboard tf = checkedBy | (att & -att);
 						All_Pieces(color) ^= tf;
-						if (validPositionNonChecked<color>()){
-							toggle = zobrist::keys[toSq][PAWN | color];
+						if (validPositionNonChecked<color>(kingSq)){
+							Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 							toggle ^= zobrist::keys[toSq - diff][PAWN | color];
 							Pieces[PAWN | color] ^= tf;
 							zobr ^= toggle;
@@ -1517,7 +1844,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 								halfmoves = oldhm;
 								zobr ^= zobrist::blackKey;
 								enPassant = tmpEnPassant;
-								if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+								if (enPassant) zobr ^= zobrist::enPassant[enSq];
 								if (color==black) --fullmoves;
 								addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, PAWN | color), beta);
 								statistics(++betaCutOff);
@@ -1535,19 +1862,15 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				}
 				if (((color==white)?(checkedBy<<8):(checkedBy>>8)) == tmpEnPassant){
 					for (int diff = (color==white?7:-9), f = 7 ; f >= 0 ; diff += 2, f -= 7){
-						if (color == white){
-							att = (tmpEnPassant >> diff);
-						} else {
-							att = (tmpEnPassant << -diff);
-						}
+						bitboard att = (color == white) ? (tmpEnPassant >> diff) : (tmpEnPassant << -diff);
 						att &=  notFilled::file[f] & Pieces[PAWN | color];
-						if (att != bitboard(0)){
-							tf = tmpEnPassant | (att & -att);
+						if (att){
+							bitboard tf = tmpEnPassant | (att & -att);
 							All_Pieces(color) ^= tf;
-							if (validPositionNonChecked<color>()){
+							if (validPositionNonChecked<color>(kingSq)){
 								unsigned long int toenpsq;
 								square(&toenpsq, tmpEnPassant);
-								toggle = zobrist::keys[toenpsq][PAWN | color];
+								Zobrist toggle = zobrist::keys[toenpsq][PAWN | color];
 								toggle ^= zobrist::keys[toenpsq - diff][PAWN | color];
 								Pieces[PAWN | color] ^= tf;
 								zobr ^= toggle;
@@ -1565,7 +1888,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 									halfmoves = oldhm;
 									zobr ^= zobrist::blackKey;
 									enPassant = tmpEnPassant;
-									if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+									if (enPassant) zobr ^= zobrist::enPassant[enSq];
 									if (color==black) --fullmoves;
 									addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, PAWN | color | TTMove_EnPassantPromFlag), beta);
 									statistics(++betaCutOff);
@@ -1584,17 +1907,13 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 				}
 			} else {
 				for (int diff = (color==white?7:-9), f = 7 ; f >= 0 ; diff += 2, f -= 7){
-					if (color == white){
-						att = (checkedBy >> diff);
-					} else {
-						att = (checkedBy << -diff);
-					}
+					bitboard att = (color == white) ? (checkedBy >> diff) : (checkedBy << -diff);
 					att &=  notFilled::file[f] & Pieces[PAWN | color];
-					if (att != bitboard(0)){
-						from = att & -att;
-						tf = checkedBy | from;
+					if (att){
+						bitboard from = att & -att;
+						bitboard tf = checkedBy | from;
 						All_Pieces(color) ^= tf;
-						if (validPositionNonChecked<color>()){
+						if (validPositionNonChecked<color>(kingSq)){
 							Pieces[PAWN | color] ^= from;
 							pieceScore -= Value::piece[PAWN | color];
 							zobr ^= zobrist::keys[toSq - diff][PAWN | color];
@@ -1620,7 +1939,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 									halfmoves = oldhm;
 									zobr ^= zobrist::blackKey;
 									enPassant = tmpEnPassant;
-									if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+									if (enPassant) zobr ^= zobrist::enPassant[enSq];
 									if (color==black) --fullmoves;
 									addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, prom), beta);
 									statistics(++betaCutOff);
@@ -1641,14 +1960,15 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 					}
 				}
 			}
-			tmp = Pieces[KNIGHT | color] & KnightMoves[toSq];
+			bitboard tmp = Pieces[KNIGHT | color] & KnightMoves[toSq];
 			while (tmp){
-				from = tmp & -tmp;
-				tf = from | checkedBy;
+				bitboard from = tmp & -tmp;
+				bitboard tf = from | checkedBy;
 				All_Pieces(color) ^= tf;
-				if (validPositionNonChecked<color>()){
-					square(&tmpSq, from);
-					toggle = zobrist::keys[tmpSq][KNIGHT | color];
+				if (validPositionNonChecked<color>(kingSq)){
+					unsigned long int fromSq;
+					square(&fromSq, from);
+					Zobrist toggle = zobrist::keys[fromSq][KNIGHT | color];
 					toggle ^= zobrist::keys[toSq][KNIGHT | color];
 					Pieces[KNIGHT | color] ^= tf;
 					zobr ^= toggle;
@@ -1666,7 +1986,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
 						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+						if (enPassant) zobr ^= zobrist::enPassant[enSq];
 						if (color==black) --fullmoves;
 						addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 						statistics(++betaCutOff);
@@ -1683,12 +2003,13 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			}
 			tmp = Pieces[BISHOP | color] & bishopAttacks(occ, toSq);
 			while (tmp){
-				from = tmp & -tmp;
-				tf = from | checkedBy;
+				bitboard from = tmp & -tmp;
+				bitboard tf = from | checkedBy;
 				All_Pieces(color) ^= tf;
-				if (validPositionNonChecked<color>()){
-					square(&tmpSq, from);
-					toggle = zobrist::keys[tmpSq][BISHOP | color];
+				if (validPositionNonChecked<color>(kingSq)){
+					unsigned long int fromSq;
+					square(&fromSq, from);
+					Zobrist toggle = zobrist::keys[fromSq][BISHOP | color];
 					toggle ^= zobrist::keys[toSq][BISHOP | color];
 					Pieces[BISHOP | color] ^= tf;
 					zobr ^= toggle;
@@ -1706,7 +2027,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
 						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+						if (enPassant) zobr ^= zobrist::enPassant[enSq];
 						if (color==black) --fullmoves;
 						addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 						statistics(++betaCutOff);
@@ -1726,13 +2047,14 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			key ct = zobrist::castling[(castling*castlingsmagic)>>59];
 			zobr ^= ct;
 			while (tmp){
-				from = tmp & -tmp;
-				tf = from | checkedBy;
+				bitboard from = tmp & -tmp;
+				bitboard tf = from | checkedBy;
 				All_Pieces(color) ^= tf;
-				if (validPositionNonChecked<color>()){
+				if (validPositionNonChecked<color>(kingSq)){
 					castling &= ~from;
-					square(&tmpSq, from);
-					toggle = zobrist::keys[tmpSq][ROOK | color];
+					unsigned long int fromSq;
+					square(&fromSq, from);
+					Zobrist toggle = zobrist::keys[fromSq][ROOK | color];
 					toggle ^= zobrist::keys[toSq][ROOK | color];
 					toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 					Pieces[ROOK | color] ^= tf;
@@ -1753,7 +2075,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
 						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+						if (enPassant) zobr ^= zobrist::enPassant[enSq];
 						if (color==black) --fullmoves;
 						addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 						statistics(++betaCutOff);
@@ -1771,12 +2093,13 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			zobr ^= ct;
 			tmp = Pieces[QUEEN | color] & queenAttacks(occ, toSq);
 			while (tmp){
-				from = tmp & -tmp;
-				tf = from | checkedBy;
+				bitboard from = tmp & -tmp;
+				bitboard tf = from | checkedBy;
 				All_Pieces(color) ^= tf;
-				if (validPositionNonChecked<color>()){
-					square(&tmpSq, from);
-					toggle = zobrist::keys[tmpSq][QUEEN | color];
+				if (validPositionNonChecked<color>(kingSq)){
+					unsigned long int fromSq;
+					square(&fromSq, from);
+					Zobrist toggle = zobrist::keys[fromSq][QUEEN | color];
 					toggle ^= zobrist::keys[toSq][QUEEN | color];
 					Pieces[QUEEN | color] ^= tf;
 					zobr ^= toggle;
@@ -1794,7 +2117,7 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
 						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+						if (enPassant) zobr ^= zobrist::enPassant[enSq];
 						if (color==black) --fullmoves;
 						addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 						statistics(++betaCutOff);
@@ -1815,10 +2138,26 @@ template<SearchMode mode, int color> int Board::search(int alpha, int beta, int 
 			All_Pieces(color ^ 1) ^= checkedBy;
 			//2) Block it if it is a ray piece
 			//ray is a subset of empty
+			unsigned long int tmpSq;
 			square(&tmpSq, Pieces[KING | color]);
 			bitboard ray = rays[tmpSq][toSq];
-			bitboard tmpP;
-			bitboard tmp2 = Pieces[PAWN | color];
+			/**
+			 * FIXME
+			 *
+position startpos moves c2c4 e7e6 d2d4 g8f6 b1c3 c7c5 d4d5 e6d5 c4d5 d7d6 g1f3 g7g6 e2e4 a7a6 c1g5 h7h6 d1a4 c8d7 g5f6 d8f6 a4b3 b7b5 f1e2 f8g7 a1b1 e8g8 e2d1 f6f4 d1c2 f7f5 e4f5 f8e8 c3e2 d7f5 e1f1 f5c2 e2f4 c2b3 a2b3 g6g5 f4e6 e8e7 f3d2 b8d7 d2e4 g7e5 e6c7 a8c8 c7a6 d7b6 b1e1 e7a7 e4c5 b6d5 c5d3 a7a6 d3e5 d6e5 g2g3 c8e8 h1g1 e5e4 e1d1 e4e3 d1d5 a6a1 f1e2 a1g1 f2e3 g1g2 e2f3 g2h2 d5b5 h2d2 b5b6 d2d3 f3g4 e8e3 b6b8 g8f7 b8b7 f7f6 b7b6 f6e5 b6b5 e5e4 b5b4 e4d5
+2012-08-30 17:15:43.911-->1:go wtime 32903 btime 25871
+2012-08-30 17:15:43.914<--1:info depth 2 time 1 nodes 96 nps 96000 pv g4h5 e3g3  score cp -455 hashfull 49
+2012-08-30 17:15:43.920<--1:info depth 3 time 1 nodes 340 nps 340000 pv g4h5 e3g3 h5h6  score cp -455 hashfull 49
+2012-08-30 17:15:43.923<--1:info depth 4 time 1 nodes 1531 nps 1531000 pv g4h5 e3g3 h5h6  score cp -455 hashfull 49
+2012-08-30 17:15:43.927<--1:info depth 5 time 3 nodes 4922 nps 1640666 pv g4h5 e3g3 h5h6  score cp -455 hashfull 49
+2012-08-30 17:15:43.931<--1:info depth 6 time 9 nodes 27290 nps 3032222 pv g4h5 e3g3 h5h6  score cp -455 hashfull 49
+2012-08-30 17:15:43.936<--1:info depth 7 time 13 nodes 38546 nps 2965076 pv g4h5 e3g3 h5h6  score cp -500 hashfull 49
+2012-08-30 17:15:43.940<--1:info depth 8 time 15 nodes 43960 nps 2930666 pv g4h5 e3g3 h5h6  score cp -500 hashfull 49
+2012-08-30 17:15:43.943<--1:info depth 9 time 15 nodes 43962 nps 2930800 pv g4h5 e3g3 h5h6  score cp -500 hashfull 49
+
+			 * Assertion failed: (ray & ~occ) == ray, file c:\users\periklis\documents\coding\chapeiro\source\Board.h, line 2107
+			 */
+			ASSUME((ray & ~occ) == ray);
 			/** A position in which enPassant can block the ray of the attacking piece can not exist
 			 * in a real game as there is no ray able to pass from the starting square of the double
 			 * forwarded pawn, from the skipped square and from a square where the king may be.
@@ -1837,7 +2176,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			 **/
 #ifdef HYPERPOSITION
 			if ((ray & tmpEnPassant) != 0){
-				toSq = square(tmpEnPassant);
+				unsigned long int tmpSq2;
+				square(&tmpSq2, tmpEnPassant);
 				bitboard attacker, cp = tmpEnPassant;
 				if (color == white){
 					cp >>= 8;
@@ -1851,15 +2191,15 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						attacker = tmpEnPassant << -diff;
 					}
 					if ((attacker & Pieces[PAWN | color]) != 0){
-						tf = tmpEnPassant | attacker;
+						bitboard tf = tmpEnPassant | attacker;
 						Pieces[PAWN | color] ^= tf;
 						Pieces[PAWN | (color^1)] ^= cp;
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= cp;
-						if (validPositionNonChecked<color>()){
-							toggle = zobrist::keys[toSq][PAWN | color];
-							toggle ^= zobrist::keys[toSq-diff][PAWN | color];
-							toggle ^= zobrist::keys[toSq+(color==white)?-8:8][PAWN | (color ^ 1)];
+						if (validPositionNonChecked<color>(kingSq)){
+							Zobrist toggle = zobrist::keys[tmpSq2][PAWN | color];
+							toggle ^= zobrist::keys[tmpSq2-diff][PAWN | color];
+							toggle ^= zobrist::keys[tmpSq2+(color==white)?-8:8][PAWN | (color ^ 1)];
 							zobr ^= toggle;
 							pieceScore -= Value::piece[PAWN | (color ^ 1)];
 							searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -1874,7 +2214,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 								halfmoves = oldhm;
 								zobr ^= zobrist::blackKey;
 								enPassant = tmpEnPassant;
-								if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+								if (enPassant) zobr ^= zobrist::enPassant[enSq];
 								if (color==black) --fullmoves;
 								addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, PAWN | color | TTMove_EnPassantPromFlag), beta);
 								statistics(++betaCutOff);
@@ -1895,6 +2235,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				}
 			}
 #endif
+
+			bitboard tmpP;
+			bitboard tmp2 = Pieces[PAWN | color];
 			tmp = ray;
 			if (color == white){
 				tmp2 <<= 8;
@@ -1914,20 +2257,21 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				tmp2 >>= 8;
 			}
 			tmp2 &= ray;
-			while (tmp2 != 0){
-				to = tmp2 & -tmp2;
+			while (tmp2){
+				bitboard to = tmp2 & -tmp2;
+				bitboard tf = to;
 				if (color == white){
-					tf = to | (to >> 16);
+					tf |= (tf >> 16);
 					enPassant = to >> 8;
 				} else {
-					tf = to | (to << 16);
+					tf |= (tf << 16);
 					enPassant = to << 8;
 				}
 				All_Pieces(color) ^= tf;
-				if (validPositionNonChecked<color>()) {
+				if (validPositionNonChecked<color>(kingSq)) {
 					square(&toSq, to);
 					square(&tmpSq, enPassant);
-					toggle = zobrist::keys[toSq][PAWN | color];
+					Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 					toggle ^= zobrist::keys[toSq+((color==white)?-16:16)][PAWN | color];
 					toggle ^= zobrist::enPassant[7&tmpSq];
 					Pieces[PAWN | color] ^= tf;
@@ -1941,7 +2285,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
 						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+						if (enPassant) zobr ^= zobrist::enPassant[enSq];
 						if (color==black) --fullmoves;
 						addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, PAWN | color), beta);
 						statistics(++betaCutOff);
@@ -1958,16 +2302,17 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				tmp2 &= tmp2 - 1;
 			}
 			enPassant = 0;
-			while (tmpP != 0){
-				to = tmpP & -tmpP;
+			while (tmpP){
+				bitboard to = tmpP & -tmpP;
+				bitboard from = to;
 				if (color == white){
-					from = to >> 8;
+					from >>= 8;
 				} else {
-					from = to << 8;
+					from <<= 8;
 				}
-				tf = to | from;
+				bitboard tf = to | from;
 				All_Pieces(color) ^= tf;
-				if (validPositionNonChecked<color>()) {
+				if (validPositionNonChecked<color>(kingSq)) {
 					square(&toSq, to);
 					Pieces[PAWN | color] ^= from;
 					pieceScore -= Value::piece[PAWN | color];
@@ -1988,7 +2333,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, prom), beta);
 							statistics(++betaCutOff);
@@ -2008,17 +2353,18 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				All_Pieces(color) ^= tf;
 				tmpP &= tmpP - 1;
 			}
-			while (tmp != 0){
-				to = tmp & -tmp;
+			while (tmp ){
+				bitboard to = tmp & -tmp;
+				bitboard tf = to;
 				if (color == white){
-					tf = to | (to >> 8);
+					tf |= (tf >> 8);
 				} else {
-					tf = to | (to << 8);
+					tf |= (tf << 8);
 				}
 				All_Pieces(color) ^= tf;
-				if (validPositionNonChecked<color>()) {
+				if (validPositionNonChecked<color>(kingSq)) {
 					square(&toSq, to);
-					toggle = zobrist::keys[toSq][PAWN | color];
+					Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 					toggle ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
 					Pieces[PAWN | color] ^= tf;
 					zobr ^= toggle;
@@ -2031,7 +2377,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
 						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+						if (enPassant) zobr ^= zobrist::enPassant[enSq];
 						if (color==black) --fullmoves;
 						addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, PAWN | color), beta);
 						statistics(++betaCutOff);
@@ -2047,18 +2393,20 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				All_Pieces(color) ^= tf;
 				tmp &= tmp - 1;
 			}
+			halfmoves = oldhm + 1;
 			tmpP = Pieces[KNIGHT | color];
-			while (tmpP != 0){
-				from = tmpP & -tmpP;
+			while (tmpP){
+				bitboard from = tmpP & -tmpP;
+				unsigned long int fromSq;
 				square(&fromSq, from);
 				tmp = ray & KnightMoves[fromSq];
-				while (tmp != 0){
-					to = tmp & -tmp;
-					tf = to | from;
+				while (tmp){
+					bitboard to = tmp & -tmp;
+					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
-					if (validPositionNonChecked<color>()){
+					if (validPositionNonChecked<color>(kingSq)){
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][KNIGHT | color];
+						Zobrist toggle = zobrist::keys[toSq][KNIGHT | color];
 						toggle ^= zobrist::keys[fromSq][KNIGHT | color];
 						Pieces[KNIGHT | color] ^= tf;
 						zobr ^= toggle;
@@ -2071,7 +2419,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -2089,17 +2437,18 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				tmpP &= tmpP - 1;
 			}
 			tmpP = Pieces[BISHOP | color];
-			while (tmpP != 0){
-				from = tmpP & -tmpP;
+			while (tmpP){
+				bitboard from = tmpP & -tmpP;
+				unsigned long int fromSq;
 				square(&fromSq, from);
 				tmp = ray & bishopAttacks(occ, fromSq);
-				while (tmp != 0){
-					to = tmp & -tmp;
-					tf = to | from;
+				while (tmp){
+					bitboard to = tmp & -tmp;
+					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
-					if (validPositionNonChecked<color>()){
+					if (validPositionNonChecked<color>(kingSq)){
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][BISHOP | color];
+						Zobrist toggle = zobrist::keys[toSq][BISHOP | color];
 						toggle ^= zobrist::keys[fromSq][BISHOP | color];
 						Pieces[BISHOP | color] ^= tf;
 						zobr ^= toggle;
@@ -2112,7 +2461,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -2132,17 +2481,18 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			tmpP = Pieces[ROOK | color];
 			//Rooks in corners can not get into ray, so changing castling rights is useless
 			//as rooks will never be in a position where they have castling right.
-			while (tmpP != 0){
-				from = tmpP & -tmpP;
+			while (tmpP){
+				bitboard from = tmpP & -tmpP;
+				unsigned long int fromSq;
 				square(&fromSq, from);
 				tmp = ray & rookAttacks(occ, fromSq);
-				while (tmp != 0){
-					to = tmp & -tmp;
-					tf = to | from;
+				while (tmp){
+					bitboard to = tmp & -tmp;
+					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
-					if (validPositionNonChecked<color>()){
+					if (validPositionNonChecked<color>(kingSq)){
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][ROOK | color];
+						Zobrist toggle = zobrist::keys[toSq][ROOK | color];
 						toggle ^= zobrist::keys[fromSq][ROOK | color];
 						Pieces[ROOK | color] ^= tf;
 						zobr ^= toggle;
@@ -2155,7 +2505,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -2173,17 +2523,18 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				tmpP &= tmpP - 1;
 			}
 			tmpP = Pieces[QUEEN | color];
-			while (tmpP != 0){
-				from = tmpP & -tmpP;
+			while (tmpP){
+				bitboard from = tmpP & -tmpP;
+				unsigned long int fromSq;
 				square(&fromSq, from);
 				tmp = ray & queenAttacks(occ, fromSq);
-				while (tmp != 0){
-					to = tmp & -tmp;
-					tf = to | from;
+				while (tmp){
+					bitboard to = tmp & -tmp;
+					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
-					if (validPositionNonChecked<color>()){
+					if (validPositionNonChecked<color>(kingSq)){
 						square(&toSq, to);
-						toggle = zobrist::keys[toSq][QUEEN | color];
+						Zobrist toggle = zobrist::keys[toSq][QUEEN | color];
 						toggle ^= zobrist::keys[fromSq][QUEEN | color];
 						Pieces[QUEEN | color] ^= tf;
 						zobr ^= toggle;
@@ -2196,7 +2547,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							halfmoves = oldhm;
 							zobr ^= zobrist::blackKey;
 							enPassant = tmpEnPassant;
-							if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+							if (enPassant) zobr ^= zobrist::enPassant[enSq];
 							if (color==black) --fullmoves;
 							addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 							statistics(++betaCutOff);
@@ -2215,8 +2566,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			}
 		}
 		//3) Move the king
-		halfmoves = oldhm + 1;
-		from = Pieces[KING | color];
+		halfmoves = 0;
+		bitboard from = Pieces[KING | color];
+		unsigned long int fromSq;
 		square(&fromSq, from);
 		bitboard mv = KingMoves[fromSq];
 		bitboard tmp1 = mv;
@@ -2226,19 +2578,19 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		ct ^= zobrist::castling[(castling*castlingsmagic)>>59];
 		zobr ^= ct;
 		for (int attacker = QUEEN | (color ^ 1); attacker >= 0 ; attacker -= 2){
-			tmp = Pieces[attacker] & tmp1;
-			while (tmp != 0){
-				to = tmp & -tmp;
-				square(kingSq + color, to);
-				tf = from | to;
+			bitboard tmp = Pieces[attacker] & tmp1;
+			while (tmp){
+				bitboard to = tmp & -tmp;
+				square(&kingSq, to);
+				bitboard tf = from | to;
 				Pieces[attacker] ^= to;
 				All_Pieces(color ^ 1) ^= to;
 				Pieces[KING | color] ^= tf;
 				All_Pieces(color) ^= tf;
-				if (validPosition<color>()){
-					toggle = zobrist::keys[fromSq][KING | color];
-					toggle ^= zobrist::keys[kingSq[color]][KING | color];
-					toggle ^= zobrist::keys[kingSq[color]][attacker];
+				if (validPosition<color>(kingSq)){
+					Zobrist toggle = zobrist::keys[fromSq][KING | color];
+					toggle ^= zobrist::keys[kingSq][KING | color];
+					toggle ^= zobrist::keys[kingSq][attacker];
 					pieceScore -= Value::piece[attacker];
 					zobr ^= toggle;
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -2253,12 +2605,10 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						castling = oldcastling;
 						zobr ^= ct;
 
-						kingSq[color] = fromSq;
-
 						halfmoves = oldhm;
 						zobr ^= zobrist::blackKey;
 						enPassant = tmpEnPassant;
-						if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+						if (enPassant) zobr ^= zobrist::enPassant[enSq];
 						if (color==black) --fullmoves;
 						addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 						statistics(++betaCutOff);
@@ -2277,16 +2627,17 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				tmp &= tmp - 1;
 			}
 		}
-		tmp = mv;
+		halfmoves = oldhm + 1;
+		bitboard tmp = mv;
 		tmp &= ~occ;
-		while (tmp != 0){
-			to = tmp & -tmp;
-			tf = to | from;
-			square(kingSq + color, to);
+		while (tmp){
+			bitboard to = tmp & -tmp;
+			bitboard tf = to | from;
+			square(&kingSq, to);
 			Pieces[KING | color] ^= tf;
 			All_Pieces(color) ^= tf;
-			if (validPosition<color>()){
-				toggle = zobrist::keys[kingSq[color]][KING | color];
+			if (validPosition<color>(kingSq)){
+				Zobrist toggle = zobrist::keys[kingSq][KING | color];
 				toggle ^= zobrist::keys[fromSq][KING | color];
 				zobr ^= toggle;
 				searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -2298,12 +2649,10 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					castling = oldcastling;
 					zobr ^= ct;
 
-					kingSq[color] = fromSq;
-
 					halfmoves = oldhm;
 					zobr ^= zobrist::blackKey;
 					enPassant = tmpEnPassant;
-					if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+					if (enPassant) zobr ^= zobrist::enPassant[enSq];
 					if (color==black) --fullmoves;
 					addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<color>(tf, 0), beta);
 					statistics(++betaCutOff);
@@ -2319,14 +2668,13 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			All_Pieces(color) ^= tf;
 			tmp &= tmp - 1;
 		}
-		kingSq[color] = fromSq;
 		castling = oldcastling;
 		zobr ^= ct;
 	}
 	halfmoves = oldhm;
 	zobr ^= zobrist::blackKey;
 	enPassant = tmpEnPassant;
-	if (enPassant != 0) zobr ^= zobrist::enPassant[7&(square( &toSq, enPassant ), toSq)];
+	if (enPassant) zobr ^= zobrist::enPassant[enSq];
 	if (color==black) --fullmoves;
 	if (mode == Perft && depth == dividedepth) {
 		U64 moves = horizonNodes;
@@ -2377,10 +2725,10 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				addTTEntry<AlphaCutoff>(zobr, depth, getMove<color>(bestTF, bestProm), alpha);
 			} else {
 				assert(bestTF == bitboard(0));//ExactScore
-				addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, depth, (bestTF == bitboard(0)) ? ttResult : getMove<color>(bestTF, bestProm), alpha);
+				addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, depth, (bestTF == bitboard(0)) ? killerMove : getMove<color>(bestTF, bestProm), alpha);
 			}
 		} else {
-			addTTEntry<QSearchAlphaCutoff>(zobr, depth, (bestTF == bitboard(0)) ? ttResult : getMove<color>(bestTF, bestProm), alpha);
+			addTTEntry<QSearchAlphaCutoff>(zobr, depth, (bestTF == bitboard(0)) ? killerMove : getMove<color>(bestTF, bestProm), alpha);
 		}
 	}
 	return alpha;
@@ -2388,15 +2736,18 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 template<int color> inline int Board::getMove(bitboard tf, int prom){
 	unsigned long int fromSq, toSq;
-	assert(tf != bitboard(0));
-	assert(prom < (TTMove_EnPassantPromFlag << 1));
-	assert((tf & All_Pieces(color)) != bitboard(0));
-	assert((tf & (~All_Pieces(color))) != bitboard(0));
+	ASSUME(tf != bitboard(0));
+	ASSUME(prom < (TTMove_EnPassantPromFlag << 1));
+	ASSUME((tf & All_Pieces(color)) != bitboard(0));
+	ASSUME((tf & (~All_Pieces(color))) != bitboard(0));
 	square(&fromSq, tf & All_Pieces(color));
 	square(&toSq, tf & (~All_Pieces(color)));
-	assert(0 <= fromSq && fromSq < 64);
-	assert(0 <= toSq && toSq < 64);
-	if (tf & Pieces[PAWN | color]) return getTTMoveFormat(fromSq, toSq, prom);
+	ASSUME(0 <= fromSq && fromSq < 64);
+	ASSUME(0 <= toSq && toSq < 64);
+	if (tf & Pieces[PAWN | color]) {
+		ASSUME(color == (prom & colormask));
+		return getTTMoveFormat(fromSq, toSq, prom);
+	}
 	return getTTMoveFormat(fromSq, toSq, 0);
 }
 
@@ -2413,6 +2764,8 @@ template<int color> bool Board::stalemate(){
 	}
 	bitboard moving2 = moving;
 	bitboard to, tf;
+	unsigned long int kingSq;
+	square(&kingSq, Pieces[KING | color]);
 	while (moving != 0){
 		to = moving & -moving;
 		if (color == white){
@@ -2420,7 +2773,7 @@ template<int color> bool Board::stalemate(){
 		} else {
 			tf = to | (to << 8);
 		}
-		if (validPosition<color>(occ ^ tf)) return false;
+		if (validPosition<color>(occ ^ tf, kingSq)) return false;
 		moving &= moving - 1;
 	}
 	if (color==white){
@@ -2438,7 +2791,7 @@ template<int color> bool Board::stalemate(){
 		} else {
 			tf = to | (to << 16);
 		}
-		if (validPosition<color>(occ ^ tf)) return false;
+		if (validPosition<color>(occ ^ tf, kingSq)) return false;
 		moving2 &= moving2 - 1;
 	}
 	bitboard from = Pieces[KING | color];
@@ -2481,7 +2834,7 @@ template<int color> bool Board::stalemate(){
 		while (moving != 0){
 			to = moving & -moving;
 			tf = to | from;
-			if (validPosition<color>(occ ^ tf)) return false;
+			if (validPosition<color>(occ ^ tf, kingSq)) return false;
 			moving &= moving - 1;
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
@@ -2489,7 +2842,7 @@ template<int color> bool Board::stalemate(){
 			while (moving != 0){
 				to = moving & -moving;
 				Pieces[captured] ^= to;
-				res = validPosition<color>(occ ^ from);
+				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 				moving &= moving - 1;
@@ -2506,7 +2859,7 @@ template<int color> bool Board::stalemate(){
 		while (moving != 0){
 			to = moving & -moving;
 			tf = to | from;
-			if (validPosition<color>(occ ^ tf)) return false;
+			if (validPosition<color>(occ ^ tf, kingSq)) return false;
 			moving &= moving - 1;
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
@@ -2514,7 +2867,7 @@ template<int color> bool Board::stalemate(){
 			while (moving != 0){
 				to = moving & -moving;
 				Pieces[captured] ^= to;
-				res = validPosition<color>(occ ^ from);
+				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 				moving &= moving - 1;
@@ -2531,7 +2884,7 @@ template<int color> bool Board::stalemate(){
 		while (moving != 0){
 			to = moving & -moving;
 			tf = to | from;
-			if (validPosition<color>(occ ^ tf)) return false;
+			if (validPosition<color>(occ ^ tf, kingSq)) return false;
 			moving &= moving - 1;
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
@@ -2539,7 +2892,7 @@ template<int color> bool Board::stalemate(){
 			while (moving != 0){
 				to = moving & -moving;
 				Pieces[captured] ^= to;
-				res = validPosition<color>(occ ^ from);
+				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 				moving &= moving - 1;
@@ -2556,7 +2909,7 @@ template<int color> bool Board::stalemate(){
 		while (moving != 0){
 			to = moving & -moving;
 			tf = to | from;
-			if (validPosition<color>(occ ^ tf)) return false;
+			if (validPosition<color>(occ ^ tf, kingSq)) return false;
 			moving &= moving - 1;
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
@@ -2564,7 +2917,7 @@ template<int color> bool Board::stalemate(){
 			while (moving != 0){
 				to = moving & -moving;
 				Pieces[captured] ^= to;
-				res = validPosition<color>(occ ^ from);
+				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 				moving &= moving - 1;
@@ -2592,7 +2945,7 @@ template<int color> bool Board::stalemate(){
 				}
 				tf = to | from;
 				Pieces[captured] ^= to;
-				res = validPosition<color>(occ ^ from);
+				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 				attc &= attc - 1;
@@ -2611,7 +2964,7 @@ template<int color> bool Board::stalemate(){
 			from = moving & -moving;
 			cpt = (color == white) ? (enPassant >> 8) : (enPassant << 8);
 			Pieces[PAWN | (color ^ 1)] ^= cpt;
-			res = validPosition<color>(occ ^ cpt ^ from ^ enPassant);
+			res = validPosition<color>(occ ^ cpt ^ from ^ enPassant, kingSq);
 			Pieces[PAWN | (color ^ 1)] ^= cpt;
 			if (res) return false;
 			moving &= moving - 1;
@@ -2622,13 +2975,24 @@ template<int color> bool Board::stalemate(){
 }
 
 template<int color> int Board::getEvaluation(int depth){
+	/**
+	 * FIXME
+	 * 8/8/8/8/6k1/R5p1/P1r3P1/5K2 b - - 21 71
+	 * 3-fold, not promoting pawn because of negative values for pawns on sides (1-2 steps on endgame)
+	 *
+	 * Mate in 1 :
+	 * 8/8/pppppppK/NBBR1NRp/nbbrqnrP/PPPPPPPk/8/Q7 w - - 0 1
+	 */
+	unsigned long int kingSqW, kingSqB;
+	square(((color == white) ? &kingSqW : &kingSqB), Pieces[KING | color]);
 	if (stalemate<color>()){
-		if (validPosition<color>()) return 0;						//stalemate
+		if (validPosition<color>(((color == white) ? kingSqW : kingSqB))) return 0; //stalemate
 		if (color == white) return -Value::MAT+rootDepth-depth;	//White Mated
 		return Value::MAT-rootDepth+depth;						//Black Mated
 	}
+	square(((color == black) ? &kingSqW : &kingSqB), Pieces[KING | color]);
 	int score = pieceScore;
-	score += Value::kingSq[kingSq[white]] - Value::kingSq[kingSq[black]];
+	score += Value::kingSq[kingSqW] - Value::kingSq[kingSqB];
 	bitboard knights = Pieces[KNIGHT | white];
 	while (knights) {
 		unsigned long int sq;
@@ -2643,29 +3007,16 @@ template<int color> int Board::getEvaluation(int depth){
 		score -= Value::knightSq[sq];
 		knights &= knights-1;
 	}
-	bitboard pawns = Pieces[PAWN | white];
-	//bitboard emptyFiles = pawns;
-	while (pawns){
-		unsigned long int sq;
-		square(&sq, pawns & -pawns);
-		score += Value::WpawnSq[sq];
-		pawns &= pawns-1;
-	}
-	pawns = Pieces[PAWN | black];
-	while (pawns){
-		unsigned long int sq;
-		square(&sq, pawns & -pawns);
-		score -= Value::BpawnSq[sq];
-		pawns &= pawns-1;
-	}
-	/**emptyFiles |= emptyFiles << 8;
+	bitboard emptyFiles = Pieces[PAWN | white] | Pieces[PAWN | black];
+	emptyFiles |= emptyFiles << 8;
 	emptyFiles |= emptyFiles << 16;
 	emptyFiles |= emptyFiles << 32;
 	emptyFiles |= emptyFiles >> 8;
 	emptyFiles |= emptyFiles >> 16;
 	emptyFiles |= emptyFiles >> 32;
-	emptyFiles = ~emptyFiles;**/
-
+	emptyFiles = ~emptyFiles;
+	score += Value::rookOnOpenFile*(popCount(emptyFiles & (Pieces[ROOK | white] | Pieces[QUEEN | white]))-popCount(emptyFiles & (Pieces[ROOK | black] | Pieces[QUEEN | black])));
+	score += evaluatePawnStructure();
 	return score;
 }
 
@@ -2695,45 +3046,72 @@ inline bitboard Board::queenAttacks(bitboard occ, const int &sq){
 	return rookAttacks(occ, sq) | bishopAttacks(occ, sq);
 }
 
-template<int color> inline void Board::filterAttackBB(bitboard &occ, unsigned long int &sq, bitboard &attack){
-	int dr = direction[kingSq[color]][sq];
-	bitboard ray = rays[kingSq[color]][sq];
+template<int color> inline void Board::filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq){
+	int dr = direction[kingSq][sq];
+	bitboard ray = rays[kingSq][sq];
 	if (dr != WRONG_PIECE && (ray & occ) == bitboard(0)){
-		bitboard xRay = XRayOFCMask[kingSq[color]][sq];
+		bitboard xRay = XRayOFCMask[kingSq][sq];
 		bitboard ray2 = xRay;
 		xRay &= occ;
-		xRay *= XRayOFCMagic[kingSq[color]][sq];
+		xRay *= XRayOFCMagic[kingSq][sq];
 		xRay >>= 64 - maxCheckAvoidanceShiftBits;
-		xRay = XRayOFCChecker[kingSq[color]][sq][xRay];
+		xRay = XRayOFCChecker[kingSq][sq][xRay];
 		if ((xRay & Pieces[QUEEN | (color ^ 1)]) != 0 || (xRay & Pieces[dr | (color ^ 1)]) != 0) attack &= ray | ray2;
 	}
 }
 
-template<int color> inline bitboard Board::getNPinnedPawns(bitboard occ){
+template<int color> inline bitboard Board::getNPinnedPawns(bitboard occ, int kingSq){
 	bitboard pinnedPawns = bitboard(0);
-	bitboard tmp = rookAttacks(occ & ~rookAttacks(occ, kingSq[color]), kingSq[color]);
+	bitboard tmp = rookAttacks(occ & ~rookAttacks(occ, kingSq), kingSq);
 	tmp &= Pieces[ROOK | (color ^ 1)] | Pieces[QUEEN | (color ^ 1)];
 	unsigned long int sq;
 	while (tmp){
 		square(&sq, tmp);
-		pinnedPawns |= rays[kingSq[color]][sq];
+		pinnedPawns |= rays[kingSq][sq];
 		tmp &= tmp - 1;
 	}
-	tmp = bishopAttacks(occ & ~bishopAttacks(occ, kingSq[color]), kingSq[color]);
+	tmp = bishopAttacks(occ & ~bishopAttacks(occ, kingSq), kingSq);
 	tmp &= Pieces[BISHOP | (color ^ 1)] | Pieces[QUEEN | (color ^ 1)];
 	while (tmp){
 		square(&sq, tmp);
-		pinnedPawns |= rays[kingSq[color]][sq];
+		pinnedPawns |= rays[kingSq][sq];
 		tmp &= tmp - 1;
 	}
 	pinnedPawns &= Pieces[PAWN | color];
 	return (~pinnedPawns);
 }
 
-template<int color> inline bitboard Board::getChecker(bitboard occ, unsigned long int &sq){
-	occ &= XRayOFCMask[kingSq[color]][sq];
-	occ *= XRayOFCMagic[kingSq[color]][sq];
+template<int color> inline bitboard Board::getChecker(bitboard occ, unsigned long int sq, int kingSq){
+	occ &= XRayOFCMask[kingSq][sq];
+	occ *= XRayOFCMagic[kingSq][sq];
 	occ >>= 64 - maxCheckAvoidanceShiftBits;
-	return XRayOFCChecker[kingSq[color]][sq][occ];
+	return XRayOFCChecker[kingSq][sq][occ];
+}
+
+inline bool Board::threefoldRepetition(){
+	int h = (halfmoves >= lastHistoryEntry) ? (lastHistoryEntry & 1) : (lastHistoryEntry - (halfmoves & (~1)));
+	for ( ; h < lastHistoryEntry ; h += 2) if (history[h] == zobr) return true;
+	return false;
+}
+
+inline int Board::evaluatePawnStructure(){
+	bitboard pawns = Pieces[PAWN | white];
+//	bitboard emptyFiles = pawns;
+	int pscore = 0;
+	while (pawns){
+		unsigned long int sq;
+		square(&sq, pawns & -pawns);
+		pscore += Value::WpawnSq[sq];
+		pawns &= pawns-1;
+	}
+	pawns = Pieces[PAWN | black];
+//	emptyFiles |= pawns;
+	while (pawns){
+		unsigned long int sq;
+		square(&sq, pawns & -pawns);
+		pscore -= Value::BpawnSq[sq];
+		pawns &= pawns-1;
+	}
+	return pscore;
 }
 #endif /* BOARD_H_ */
