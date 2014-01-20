@@ -12,11 +12,6 @@
 #include "MoveEncoding.h"
 #include "Values.h"
 #include <ctime>
-#include <thread>
-#include <chrono>
-//#include "boost/date_time/posix_time/posix_time.hpp"
-//#include "boost/date_time/microsec_time_clock.hpp"
-
 
 const int Value::piece[12] = {100,
 							 -100,
@@ -616,7 +611,7 @@ int Board::test(int depth){
 }
 
 void Board::go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
-	searchThread = new std::thread(&Board::startSearch, this, maxDepth, wTime, bTime, wInc, bInc, movesUntilTimeControl, searchForXMsec, infinitiveSearch);
+	searchThread = new thread(&Board::startSearch, this, maxDepth, wTime, bTime, wInc, bInc, movesUntilTimeControl, searchForXMsec, infinitiveSearch);
 }
 
 void Board::stop(){
@@ -629,12 +624,12 @@ void Board::stop(){
 int rootDepth = 0;
 
 void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
-	time_td startTime = clock_ns::now();
+	time_td startTime = get_current_time();
 	interruption_requested = false;
 	if (movesUntilTimeControl == NO_NEXT_TIME_CONTROL) movesUntilTimeControl = 40;
 	U64 timeToSearch = ((playing == white) ? wTime : bTime) / (movesUntilTimeControl);
-	time_td searchEndTime = startTime + std::chrono::milliseconds(timeToSearch < searchForXMsec ? timeToSearch : searchForXMsec);
-	std::chrono::nanoseconds elapsedTime(0);
+	time_td searchEndTime = startTime + milli_to_time(timeToSearch < searchForXMsec ? timeToSearch : searchForXMsec);
+	time_duration elapsedTime = get_zero_time();
 	time_td currentTime;
 	int depth = (STARTING_DEPTH < maxDepth) ? STARTING_DEPTH : 1; //STARTING_DEPTH
 	int alpha = -inf;
@@ -646,14 +641,14 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 	U64 stNodes = nodes;
 	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
 	Board * extrPv = NULL;
-	while (depth <= maxDepth && (infinitiveSearch || ((searchEndTime - clock_ns::now()) > elapsedTime*ELAPSED_TIME_FACTOR)) && matdcycles < 3){
+	while (depth <= maxDepth && (infinitiveSearch || ((searchEndTime - get_current_time()) > elapsedTime*ELAPSED_TIME_FACTOR)) && matdcycles < 3){
 		rootDepth = depth;
 		if (playing == white){
 			score = search<PV, white, true>(alpha, beta, depth);
 		} else {
 			score = search<PV, black, true>(alpha, beta, depth);
 		}
-		elapsedTime = clock_ns::now() - startTime;
+		elapsedTime = get_current_time() - startTime;
 		if (interruption_requested) {
 			ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
 			break; //DO NOT USE THE SCORE RETURNED BY SEARCH!!! IT IS NOT VALID!!!
@@ -662,9 +657,17 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 		//Sending Infos
 		std::cout << "info";
 		std::cout << " depth " << depth;
+#if defined _MSC_VER && _MSC_VER <= 1600
+		std::cout << " time " << elapsedTime.total_milliseconds();
+#else
 		std::cout << " time " << (elapsedTime.count()/1000);
+#endif
 		std::cout << " nodes " << nodes-stNodes;
+#if defined _MSC_VER && _MSC_VER <= 1600
+		if (elapsedTime.total_milliseconds() != 0ull) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.total_milliseconds());
+#else
 		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000ull);
+#endif
 		extrPv = new Board(this);
 		std::cout << " pv " << extrPv->extractPV(depth);
 		if (isMat(score)) {
@@ -728,4 +731,29 @@ void Board::forgetOldHistory(){
 	int offset = lastHistoryEntry - halfmoves;
 	for (int i = 0 ; i <= halfmoves ; ++i) history[i] = history[i+offset];
 	lastHistoryEntry = halfmoves;
+}
+
+
+time_td get_current_time(){
+#if defined _MSC_VER && _MSC_VER <= 1600
+	return boost::posix_time::microsec_clock::universal_time();
+#else
+	return clock_ns::now();
+#endif
+}
+
+time_duration milli_to_time(U64 milli){
+#if defined _MSC_VER && _MSC_VER <= 1600
+	return boost::posix_time::milliseconds(milli);
+#else
+	return std::chrono::milliseconds(milli);
+#endif
+}
+
+time_duration get_zero_time(){
+#if defined _MSC_VER && _MSC_VER <= 1600
+	return boost::posix_time::milliseconds(0);
+#else
+	return 0;
+#endif
 }

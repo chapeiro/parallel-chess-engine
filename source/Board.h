@@ -20,11 +20,18 @@
 //#define NDEBUG
 #include <assert.h>
 #include <exception>
-//#include <boost/thread/thread.hpp>
+
+#if defined _MSC_VER && _MSC_VER <= 1600
+#include <boost/thread/thread.hpp>
+#include "boost/date_time/posix_time/posix_time.hpp"
+#include "boost/date_time/microsec_time_clock.hpp"
+#else
 #include <thread>
+#include <chrono>
+#endif
+
 #include "TranspositionTable.h"
 #include <iomanip>
-#include <chrono>
 
 //#define NO_KILLER_MOVE
 
@@ -72,8 +79,19 @@ const int WRONG_PIECE = -10;**/
 
 #define fd_rank(x) (0xFFull << ((x) << 3))
 #define fd_file(x) (0x0101010101010101ull << (7^(x)))
-typedef std::chrono::high_resolution_clock::time_point time_td;
-typedef std::chrono::high_resolution_clock clock_ns;
+
+#if defined _MSC_VER && _MSC_VER <= 1600
+typedef boost::thread thread;
+#define chrono boost::posix_time;
+typedef boost::posix_time::ptime time_td;
+typedef boost::posix_time::time_duration time_duration;
+#else
+#define chrono std::chrono;
+typedef chrono::high_resolution_clock::time_point time_td;
+typedef chrono::high_resolution_clock clock_ns;
+typedef std::chrono::nanoseconds time_duration;
+typedef std::thread thread;
+#endif
 
 /**
 const bitboard lastRank_w = filled::rank[7];
@@ -181,7 +199,7 @@ class Board {
 		Zobrist history[256];
 		int lastHistoryEntry;
 		int pieceScore;
-		std::thread *searchThread;
+		thread *searchThread;
 		bool interruption_requested;
 
 	public:
@@ -3121,4 +3139,9 @@ inline int Board::evaluatePawnStructure(){
 	}
 	return pscore;
 }
+
+inline time_td get_current_time();
+inline time_duration milli_to_time(U64 milli);
+inline time_duration get_zero_time();
+inline time_td get_factored_time(time_td el_time);
 #endif /* BOARD_H_ */
