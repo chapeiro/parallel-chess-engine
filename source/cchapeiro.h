@@ -7,6 +7,8 @@
 
 #ifndef CCHAPEIRO_H_
 #define CCHAPEIRO_H_
+//fixme remove
+#define quiescenceMask (4)
 
 #include <string>
 

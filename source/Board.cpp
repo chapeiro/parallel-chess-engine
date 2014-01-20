@@ -6,13 +6,16 @@
  */
 
 #include "Board.h"
+#include <cstring>
 #include <string>
 #include "SquareMapping.h"
 #include "MoveEncoding.h"
 #include "Values.h"
 #include <ctime>
-#include "boost/date_time/posix_time/posix_time.hpp"
-#include "boost/date_time/microsec_time_clock.hpp"
+#include <thread>
+#include <chrono>
+//#include "boost/date_time/posix_time/posix_time.hpp"
+//#include "boost/date_time/microsec_time_clock.hpp"
 
 
 const int Value::piece[12] = {100,
@@ -105,6 +108,7 @@ Board::Board(Board * b){
 	fullmoves = b->fullmoves;
 	//Memory
 	memcpy(history, b->history, 256*sizeof(*history));
+	interruption_requested = false;
 }
 
 Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, int fenEnPY, int fenHC, int fenFM){
@@ -612,12 +616,12 @@ int Board::test(int depth){
 }
 
 void Board::go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
-	searchThread = new boost::thread(&Board::startSearch, this, maxDepth, wTime, bTime, wInc, bInc, movesUntilTimeControl, searchForXMsec, infinitiveSearch);
+	searchThread = new std::thread(&Board::startSearch, this, maxDepth, wTime, bTime, wInc, bInc, movesUntilTimeControl, searchForXMsec, infinitiveSearch);
 }
 
 void Board::stop(){
 	if (searchThread == NULL) return;
-	searchThread->interrupt();
+	interruption_requested = true;
 	delete searchThread;
 	searchThread = NULL;
 }
@@ -625,12 +629,13 @@ void Board::stop(){
 int rootDepth = 0;
 
 void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
-	boost::posix_time::ptime startTime = boost::posix_time::microsec_clock::universal_time();
+	time_td startTime = clock_ns::now();
+	interruption_requested = false;
 	if (movesUntilTimeControl == NO_NEXT_TIME_CONTROL) movesUntilTimeControl = 40;
 	U64 timeToSearch = ((playing == white) ? wTime : bTime) / (movesUntilTimeControl);
-	boost::posix_time::ptime searchEndTime = startTime + boost::posix_time::milliseconds(timeToSearch < searchForXMsec ? timeToSearch : searchForXMsec);
-	boost::posix_time::time_duration elapsedTime = boost::posix_time::milliseconds(0);
-	boost::posix_time::ptime currentTime ;
+	time_td searchEndTime = startTime + std::chrono::milliseconds(timeToSearch < searchForXMsec ? timeToSearch : searchForXMsec);
+	std::chrono::nanoseconds elapsedTime(0);
+	time_td currentTime;
 	int depth = (STARTING_DEPTH < maxDepth) ? STARTING_DEPTH : 1; //STARTING_DEPTH
 	int alpha = -inf;
 	int beta = inf;
@@ -641,15 +646,15 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 	U64 stNodes = nodes;
 	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
 	Board * extrPv = NULL;
-	while (depth <= maxDepth && (infinitiveSearch || ((searchEndTime - boost::posix_time::microsec_clock::universal_time()) > elapsedTime*ELAPSED_TIME_FACTOR)) && matdcycles < 3){
+	while (depth <= maxDepth && (infinitiveSearch || ((searchEndTime - clock_ns::now()) > elapsedTime*ELAPSED_TIME_FACTOR)) && matdcycles < 3){
 		rootDepth = depth;
 		if (playing == white){
 			score = search<PV, white, true>(alpha, beta, depth);
 		} else {
 			score = search<PV, black, true>(alpha, beta, depth);
 		}
-		elapsedTime = boost::posix_time::microsec_clock::universal_time() - startTime;
-		if (boost::this_thread::interruption_requested()) {
+		elapsedTime = clock_ns::now() - startTime;
+		if (interruption_requested) {
 			ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
 			break; //DO NOT USE THE SCORE RETURNED BY SEARCH!!! IT IS NOT VALID!!!
 		}
@@ -657,9 +662,9 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 		//Sending Infos
 		std::cout << "info";
 		std::cout << " depth " << depth;
-		std::cout << " time " << elapsedTime.total_milliseconds();
+		std::cout << " time " << (elapsedTime.count()/1000);
 		std::cout << " nodes " << nodes-stNodes;
-		if (elapsedTime.total_milliseconds() != 0ull) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.total_milliseconds());
+		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000ull);
 		extrPv = new Board(this);
 		std::cout << " pv " << extrPv->extractPV(depth);
 		if (isMat(score)) {
