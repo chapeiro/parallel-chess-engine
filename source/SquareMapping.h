@@ -29,7 +29,7 @@ inline int rank(const int &index){
 	}
 #else
 	inline void square(unsigned long int* index, bitboard bb){
-		*index = __builtin_ctzll (bb);;/**/
+		*index = __builtin_ctzll (bb);/**/
 		//return magictable[(b*magic) >> 58];
 	}
 #endif
