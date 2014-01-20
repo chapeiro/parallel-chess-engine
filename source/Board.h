@@ -86,9 +86,8 @@ typedef boost::thread thread;
 typedef boost::posix_time::ptime time_td;
 typedef boost::posix_time::time_duration time_duration;
 #else
-#define chrono std::chrono;
-typedef chrono::high_resolution_clock::time_point time_td;
-typedef chrono::high_resolution_clock clock_ns;
+typedef std::chrono::high_resolution_clock::time_point time_td;
+typedef std::chrono::high_resolution_clock clock_ns;
 typedef std::chrono::nanoseconds time_duration;
 typedef std::thread thread;
 #endif

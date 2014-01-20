@@ -754,6 +754,6 @@ time_duration get_zero_time(){
 #if defined _MSC_VER && _MSC_VER <= 1600
 	return boost::posix_time::milliseconds(0);
 #else
-	return 0;
+	return std::chrono::nanoseconds(0);
 #endif
 }
