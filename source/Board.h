@@ -7,8 +7,6 @@
  *      Author: Chrysogelos Periklis
  */
 
-//fixme remove
-#define quiescenceMask (4)
 #ifndef BOARD_H_
 #define BOARD_H_
 #include "Utilities.h"
@@ -22,9 +20,11 @@
 //#define NDEBUG
 #include <assert.h>
 #include <exception>
-#include <boost/thread/thread.hpp>
+//#include <boost/thread/thread.hpp>
+#include <thread>
 #include "TranspositionTable.h"
 #include <iomanip>
+#include <chrono>
 
 //#define NO_KILLER_MOVE
 
@@ -35,7 +35,11 @@
 #ifndef NDEBUG
 #define ASSUME(x) assert(x)
 #else
+#ifdef _MSC_VER
 #define ASSUME(x) __assume(x)
+#else
+#define ASSUME(x) ((void) 0)
+#endif
 #endif
 
 typedef chapeiro::bitboard bitboard;
@@ -68,6 +72,8 @@ const int WRONG_PIECE = -10;**/
 
 #define fd_rank(x) (0xFFull << ((x) << 3))
 #define fd_file(x) (0x0101010101010101ull << (7^(x)))
+typedef std::chrono::high_resolution_clock::time_point time_td;
+typedef std::chrono::high_resolution_clock clock_ns;
 
 /**
 const bitboard lastRank_w = filled::rank[7];
@@ -175,7 +181,8 @@ class Board {
 		Zobrist history[256];
 		int lastHistoryEntry;
 		int pieceScore;
-		boost::thread *searchThread;
+		std::thread *searchThread;
+		bool interruption_requested;
 
 	public:
 		//for Perft
@@ -400,7 +407,7 @@ template<SearchMode mode, int color> inline void Board::searchDeeper(int alpha, 
  **/
 template<SearchMode mode, int color, bool root> int Board::search(int alpha, int beta, int depth){
 	//FIXME This is saved as a betaCutOff later in the TT!
-	if (color==white) if (boost::this_thread::interruption_requested()) return inf; //TODO Revision! does not seem such a good idea :(
+	if (color==white) if (interruption_requested) return inf; //TODO Revision! does not seem such a good idea :(
 	//count nodes searched
 	++nodes;
 	if ((!root) && (mode != Perft) && (mode < quiescenceMask) && (halfmoves >= 100 || threefoldRepetition())) return 0;
@@ -2711,7 +2718,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 #endif
 	}
 	if (mode == Perft) return alpha + 1;
-	if (!boost::this_thread::interruption_requested()){
+	if (!interruption_requested){
 		if (mode < quiescenceMask){
 			if (stNodes == nodes){
 				if (checkedBy == bitboard(0)) {

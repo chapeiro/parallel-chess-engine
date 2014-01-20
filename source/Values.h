@@ -4,6 +4,7 @@
  *  Created on: 2 ��� 2011
  *      Author: Chrysogelos Periklis
  */
+#include <cmath>
 
 #ifndef VALUES_H_
 #define VALUES_H_

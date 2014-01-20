@@ -1,14 +1,13 @@
 /*
  * SquareMapping.h
  *
- *  Created on: 2 Αυγ 2011
+ *  Created on: 2 οΏ½οΏ½οΏ½ 2011
  *      Author: Chrysogelos Periklis
  */
 
 #ifndef SQUAREMAPPING_H_
 #define SQUAREMAPPING_H_
 #include "MagicsAndPrecomputedData.h"
-#include <intrin.h>
 
 inline int index(const int &x, const int &y){
 	return (y << 3) | (7 ^ x);
