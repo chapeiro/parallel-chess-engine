@@ -817,7 +817,7 @@ go infinite
 				bitboard tmp = attacking[at] & Pieces[captured];
 				while (tmp){
 					unsigned long int toSq;
-					bitboard to = tmp & -tmp;
+					bitboard to = pop_lsb(tmp);
 					bitboard from = to;
 					if (color == white){
 						from >>= diff;
@@ -874,7 +874,6 @@ go infinite
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
 					Pieces[PAWN | color] ^= from;
-					tmp &= tmp - 1;
 				}
 			}
 			pieceScore += Value::piece[captured];
@@ -902,7 +901,7 @@ go infinite
 				bitboard tmp = attacking[at] & Pieces[captured];
 				while (tmp){
 					unsigned long int toSq;
-					bitboard to = tmp & -tmp, from;
+					bitboard to = pop_lsb(tmp), from;
 					if (color == white){
 						from = to >> diff;
 					} else {
@@ -942,7 +941,6 @@ go infinite
 						bestTF = tf;
 						bestProm = PAWN | color;
 					}
-					tmp &= tmp - 1;
 				}
 			}
 			pieceScore += Value::piece[captured];
@@ -1007,7 +1005,7 @@ go infinite
 			tmp &= empty;
 			pieceScore -= Value::piece[PAWN | color];
 			while (tmp){
-				bitboard to = tmp & -tmp;
+				bitboard to = pop_lsb(tmp);
 				bitboard from = to;
 				if (color == white){
 					from >>= 8;
@@ -1053,7 +1051,6 @@ go infinite
 				zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
 				Pieces[PAWN | color] ^= from;
 				All_Pieces(color) ^= tf;
-				tmp &= tmp - 1;
 			}
 			pieceScore += Value::piece[PAWN | color];
 		}
@@ -1073,7 +1070,7 @@ go infinite
 			//TODO Only knights that are not pinned can move, so tmp's population is predictable from here
 			while (tmp){
 				bitboard xRay;
-				frombb[n] = tmp & -tmp;
+				frombb[n] = pop_lsb(tmp);
 				square(fromSq+n, frombb[n]);
 				dr = direction[kingSq][fromSq[n]];
 				//A pinned knight has no legal moves.
@@ -1084,7 +1081,6 @@ go infinite
 					piecet[n] = KNIGHT | color;
 					++n;
 				}
-				tmp &= tmp - 1;
 			}
 			//TODO A pinned piece can only move between the pinner and the king
 			//Also a bishop can only move if he is pinned by a queen or bishop, if he is pinned
@@ -1092,35 +1088,32 @@ go infinite
 			//the pinner will be capturable by the pinned piece!
 			tmp = Pieces[BISHOP | color];
 			while (tmp){
-				frombb[n] = tmp & -tmp;
+				frombb[n] = pop_lsb(tmp);
 				square(fromSq+n, frombb[n]);
 				attack[n] = bishopAttacks(occ, fromSq[n]);
 				piecet[n] = BISHOP | color;
 				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
 				++n;
-				tmp &= tmp - 1;
 			}
 			firstRook = n;
 			tmp = Pieces[ROOK | color];
 			while (tmp){
-				frombb[n] = tmp & -tmp;
+				frombb[n] = pop_lsb(tmp);
 				square(fromSq+n, frombb[n]);
 				attack[n] = rookAttacks(occ, fromSq[n]);
 				piecet[n] = ROOK | color;
 				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
 				++n;
-				tmp &= tmp - 1;
 			}
 			firstQueen = n;
 			tmp = Pieces[QUEEN | color];
 			while (tmp){
-				frombb[n] = tmp & -tmp;
+				frombb[n] = pop_lsb(tmp);
 				square(fromSq+n, frombb[n]);
 				attack[n] = queenAttacks(occ, fromSq[n]);
 				piecet[n] = QUEEN | color;
 				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
 				++n;
-				tmp &= tmp - 1;
 			}
 		}
 		//frombb[n] = Pieces[KING | color];
@@ -1133,7 +1126,7 @@ go infinite
 				for (unsigned long int i = 0 ; i < n ; ++i) {
 					bitboard tmp = Pieces[captured] & attack[i];
 					while (tmp){
-						bitboard to = tmp & -tmp;
+						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
 						square(&toSq, to);
@@ -1167,12 +1160,11 @@ go infinite
 							alpha = score;	//Better move found!
 							bestTF = tf;
 						}
-						tmp &= tmp - 1;
 					}
 				}
 				bitboard tmp = Pieces[captured] & KAttack;
 				while (tmp){
-					bitboard to = tmp & -tmp;
+					bitboard to = pop_lsb(tmp);
 					unsigned long int nkSq;
 					square(&nkSq, to);
 					bitboard tf = to | Pieces[KING | color];
@@ -1213,7 +1205,6 @@ go infinite
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
-					tmp &= tmp - 1;
 				}
 				pieceScore += Value::piece[captured];
 			}
@@ -1223,7 +1214,7 @@ go infinite
 				for (unsigned long int i = 0 ; i < n ; ++i) {
 					bitboard tmp = attack[i] & empty;
 					while (tmp){
-						bitboard to = tmp & -tmp;
+						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
 						square(&toSq, to);
@@ -1251,12 +1242,11 @@ go infinite
 							alpha = score;	//Better move found!
 							bestTF = tf;
 						}
-						tmp &= tmp - 1;
 					}
 				}
 				bitboard tmp = KAttack & empty;
 				while (tmp){
-					bitboard to = tmp & -tmp;
+					bitboard to = pop_lsb(tmp);
 					unsigned long int nkSq;
 					square(&nkSq, to);
 					bitboard tf = to | Pieces[KING | color];
@@ -1289,7 +1279,6 @@ go infinite
 					}
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
-					tmp &= tmp - 1;
 				}
 			}
 		} else {
@@ -1302,7 +1291,7 @@ go infinite
 				for (i = 0; i < firstRook ; ++i) {
 					bitboard tmp = Pieces[captured] & attack[i];
 					while (tmp){
-						bitboard to = tmp & -tmp;
+						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
 						square(&toSq, to);
@@ -1337,7 +1326,6 @@ go infinite
 							alpha = score;	//Better move found!
 							bestTF = tf;
 						}
-						tmp &= tmp - 1;
 					}
 				}
 				zobr ^= ct;
@@ -1347,7 +1335,7 @@ go infinite
 					zobr ^= ct2;
 					bitboard tmp = Pieces[captured] & attack[i];
 					while (tmp){
-						bitboard to = tmp & -tmp;
+						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
 						square(&toSq, to);
@@ -1385,7 +1373,6 @@ go infinite
 							alpha = score;	//Better move found!
 							bestTF = tf;
 						}
-						tmp &= tmp - 1;
 					}
 					zobr ^= ct2;
 					castling = oldcastling;
@@ -1394,7 +1381,7 @@ go infinite
 				for (; i < n ; ++i) {
 					bitboard tmp = Pieces[captured] & attack[i];
 					while (tmp){
-						bitboard to = tmp & -tmp;
+						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
 						square(&toSq, to);
@@ -1428,7 +1415,6 @@ go infinite
 							alpha = score;	//Better move found!
 							bestTF = tf;
 						}
-						tmp &= tmp - 1;
 					}
 				}
 				castling &= castlingc<color>::deactrights;
@@ -1437,7 +1423,7 @@ go infinite
 				zobr ^= ct2;
 				bitboard tmp = Pieces[captured] & KAttack;
 				while (tmp){
-					bitboard to = tmp & -tmp;
+					bitboard to = pop_lsb(tmp);
 					unsigned long int nkSq;
 					square(&nkSq, to);
 					bitboard tf = to | Pieces[KING | color];
@@ -1481,7 +1467,6 @@ go infinite
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
-					tmp &= tmp - 1;
 				}
 				castling = oldcastling;
 				zobr ^= ct;
@@ -1573,7 +1558,7 @@ go infinite
 				for (i = 0; i < firstRook ; ++i) {
 					bitboard tmp = attack[i] & empty;
 					while (tmp){
-						bitboard to = tmp & -tmp;
+						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
 						square(&toSq, to);
@@ -1601,7 +1586,6 @@ go infinite
 							alpha = score;	//Better move found!
 							bestTF = tf;
 						}
-						tmp &= tmp - 1;
 					}
 				}
 				zobr ^= ct;
@@ -1611,7 +1595,7 @@ go infinite
 					zobr ^= ct2;
 					bitboard tmp = attack[i] & empty;
 					while (tmp){
-						bitboard to = tmp & -tmp;
+						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
 						square(&toSq, to);
@@ -1643,7 +1627,6 @@ go infinite
 							alpha = score;	//Better move found!
 							bestTF = tf;
 						}
-						tmp &= tmp-1;
 					}
 					zobr ^= ct2;
 					castling = oldcastling;
@@ -1652,7 +1635,7 @@ go infinite
 				for (; i < n ; ++i) {
 					bitboard tmp = attack[i] & empty;
 					while (tmp){
-						bitboard to = tmp & -tmp;
+						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
 						square(&toSq, to);
@@ -1680,7 +1663,6 @@ go infinite
 							alpha = score;	//Better move found!
 							bestTF = tf;
 						}
-						tmp &= tmp - 1;
 					}
 				}
 				castling &= castlingc<color>::deactrights;
@@ -1689,7 +1671,7 @@ go infinite
 				zobr ^= ct2;
 				bitboard tmp = KAttack & empty;
 				while (tmp){
-					bitboard to = tmp & -tmp;
+					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | Pieces[KING | color];
 					unsigned long int nkSq;
 					square(&nkSq, to);
@@ -1726,7 +1708,6 @@ go infinite
 					}
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
-					tmp &= tmp - 1;
 				}
 				castling = oldcastling;
 				zobr ^= ct;
@@ -1746,7 +1727,7 @@ go infinite
 			}
 			tmp &= empty;
 			while (tmp){
-				bitboard to = tmp & -tmp, tf;
+				bitboard to = pop_lsb(tmp), tf;
 				if (color == white){
 					tf = to | (to >> 8);
 				} else {
@@ -1779,7 +1760,6 @@ go infinite
 					bestTF = tf;
 					bestProm = PAWN | color;
 				}
-				tmp &= tmp - 1;
 			}
 			tmp = pawnsToForward;
 			if (color == white){
@@ -1788,7 +1768,7 @@ go infinite
 				tmp = ( ( ( ( tmp & pstartRank_b ) >> 8 ) & empty ) >> 8 ) & empty;
 			}
 			while (tmp){
-				bitboard to = tmp & -tmp, tf;
+				bitboard to = pop_lsb(tmp), tf;
 				if (color == white){
 					tf = to | (to >> 16);
 					enPassant = to >> 8;
@@ -1825,7 +1805,6 @@ go infinite
 					bestTF = tf;
 					bestProm = PAWN | color;
 				}
-				tmp &= tmp - 1;
 			}
 			enPassant = bitboard(0);
 		}
@@ -1847,7 +1826,7 @@ go infinite
 					bitboard att = (color == white) ? (checkedBy >> diff) : (checkedBy << -diff);
 					att &= notFilled::file[f] & Pieces[PAWN | color];
 					if (att){
-						bitboard tf = checkedBy | (att & -att);
+						bitboard tf = checkedBy | (att & -att); //FIXME lsb not needed, one bit guaranteed?
 						All_Pieces(color) ^= tf;
 						if (validPositionNonChecked<color>(kingSq)){
 							Zobrist toggle = zobrist::keys[toSq][PAWN | color];
@@ -1889,7 +1868,7 @@ go infinite
 						bitboard att = (color == white) ? (tmpEnPassant >> diff) : (tmpEnPassant << -diff);
 						att &=  notFilled::file[f] & Pieces[PAWN | color];
 						if (att){
-							bitboard tf = tmpEnPassant | (att & -att);
+							bitboard tf = tmpEnPassant | (att & -att); //FIXME same as above
 							All_Pieces(color) ^= tf;
 							if (validPositionNonChecked<color>(kingSq)){
 								unsigned long int toenpsq;
@@ -1934,7 +1913,7 @@ go infinite
 					bitboard att = (color == white) ? (checkedBy >> diff) : (checkedBy << -diff);
 					att &=  notFilled::file[f] & Pieces[PAWN | color];
 					if (att){
-						bitboard from = att & -att;
+						bitboard from = att & -att; //FIXME also?
 						bitboard tf = checkedBy | from;
 						All_Pieces(color) ^= tf;
 						if (validPositionNonChecked<color>(kingSq)){
@@ -1986,7 +1965,7 @@ go infinite
 			}
 			bitboard tmp = Pieces[KNIGHT | color] & KnightMoves[toSq];
 			while (tmp){
-				bitboard from = tmp & -tmp;
+				bitboard from = pop_lsb(tmp);
 				bitboard tf = from | checkedBy;
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
@@ -2023,11 +2002,10 @@ go infinite
 					}
 				}
 				All_Pieces(color) ^= tf;
-				tmp &= tmp - 1;
 			}
 			tmp = Pieces[BISHOP | color] & bishopAttacks(occ, toSq);
 			while (tmp){
-				bitboard from = tmp & -tmp;
+				bitboard from = pop_lsb(tmp);
 				bitboard tf = from | checkedBy;
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
@@ -2064,14 +2042,13 @@ go infinite
 					}
 				}
 				All_Pieces(color) ^= tf;
-				tmp &= tmp - 1;
 			}
 			tmp = Pieces[ROOK | color] & rookAttacks(occ, toSq);
 			bitboard oldcastling = castling;
 			key ct = zobrist::castling[(castling*castlingsmagic)>>59];
 			zobr ^= ct;
 			while (tmp){
-				bitboard from = tmp & -tmp;
+				bitboard from = pop_lsb(tmp);
 				bitboard tf = from | checkedBy;
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
@@ -2112,12 +2089,11 @@ go infinite
 					}
 				}
 				All_Pieces(color) ^= tf;
-				tmp &= tmp - 1;
 			}
 			zobr ^= ct;
 			tmp = Pieces[QUEEN | color] & queenAttacks(occ, toSq);
 			while (tmp){
-				bitboard from = tmp & -tmp;
+				bitboard from = pop_lsb(tmp);
 				bitboard tf = from | checkedBy;
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
@@ -2154,7 +2130,6 @@ go infinite
 					}
 				}
 				All_Pieces(color) ^= tf;
-				tmp &= tmp - 1;
 			}
 			pieceScore += Value::piece[attacker];
 			zobr ^= zobrist::keys[toSq][attacker];
@@ -2282,7 +2257,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			}
 			tmp2 &= ray;
 			while (tmp2){
-				bitboard to = tmp2 & -tmp2;
+				bitboard to = pop_lsb(tmp2);
 				bitboard tf = to;
 				if (color == white){
 					tf |= (tf >> 16);
@@ -2323,11 +2298,10 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					}
 				}
 				All_Pieces(color) ^= tf;
-				tmp2 &= tmp2 - 1;
 			}
 			enPassant = 0;
 			while (tmpP){
-				bitboard to = tmpP & -tmpP;
+				bitboard to = pop_lsb(tmpP);
 				bitboard from = to;
 				if (color == white){
 					from >>= 8;
@@ -2375,10 +2349,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					Pieces[PAWN | color] ^= from;
 				}
 				All_Pieces(color) ^= tf;
-				tmpP &= tmpP - 1;
 			}
 			while (tmp ){
-				bitboard to = tmp & -tmp;
+				bitboard to = pop_lsb(tmp);
 				bitboard tf = to;
 				if (color == white){
 					tf |= (tf >> 8);
@@ -2415,17 +2388,16 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					}
 				}
 				All_Pieces(color) ^= tf;
-				tmp &= tmp - 1;
 			}
 			halfmoves = oldhm + 1;
 			tmpP = Pieces[KNIGHT | color];
 			while (tmpP){
-				bitboard from = tmpP & -tmpP;
+				bitboard from = pop_lsb(tmpP);
 				unsigned long int fromSq;
 				square(&fromSq, from);
 				tmp = ray & KnightMoves[fromSq];
 				while (tmp){
-					bitboard to = tmp & -tmp;
+					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
@@ -2456,18 +2428,16 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						}
 					}
 					All_Pieces(color) ^= tf;
-					tmp &= tmp - 1;
 				}
-				tmpP &= tmpP - 1;
 			}
 			tmpP = Pieces[BISHOP | color];
 			while (tmpP){
-				bitboard from = tmpP & -tmpP;
+				bitboard from = pop_lsb(tmpP);
 				unsigned long int fromSq;
 				square(&fromSq, from);
 				tmp = ray & bishopAttacks(occ, fromSq);
 				while (tmp){
-					bitboard to = tmp & -tmp;
+					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
@@ -2498,20 +2468,18 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						}
 					}
 					All_Pieces(color) ^= tf;
-					tmp &= tmp - 1;
 				}
-				tmpP &= tmpP - 1;
 			}
 			tmpP = Pieces[ROOK | color];
 			//Rooks in corners can not get into ray, so changing castling rights is useless
 			//as rooks will never be in a position where they have castling right.
 			while (tmpP){
-				bitboard from = tmpP & -tmpP;
+				bitboard from = pop_lsb(tmpP);
 				unsigned long int fromSq;
 				square(&fromSq, from);
 				tmp = ray & rookAttacks(occ, fromSq);
 				while (tmp){
-					bitboard to = tmp & -tmp;
+					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
@@ -2542,18 +2510,16 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						}
 					}
 					All_Pieces(color) ^= tf;
-					tmp &= tmp - 1;
 				}
-				tmpP &= tmpP - 1;
 			}
 			tmpP = Pieces[QUEEN | color];
 			while (tmpP){
-				bitboard from = tmpP & -tmpP;
+				bitboard from = pop_lsb(tmpP);
 				unsigned long int fromSq;
 				square(&fromSq, from);
 				tmp = ray & queenAttacks(occ, fromSq);
 				while (tmp){
-					bitboard to = tmp & -tmp;
+					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
@@ -2584,9 +2550,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						}
 					}
 					All_Pieces(color) ^= tf;
-					tmp &= tmp - 1;
 				}
-				tmpP &= tmpP - 1;
 			}
 		}
 		//3) Move the king
@@ -2604,7 +2568,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		for (int attacker = QUEEN | (color ^ 1); attacker >= 0 ; attacker -= 2){
 			bitboard tmp = Pieces[attacker] & tmp1;
 			while (tmp){
-				bitboard to = tmp & -tmp;
+				bitboard to = pop_lsb(tmp);
 				square(&kingSq, to);
 				bitboard tf = from | to;
 				Pieces[attacker] ^= to;
@@ -2648,14 +2612,13 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				All_Pieces(color) ^= tf;
 				Pieces[attacker] ^= to;
 				All_Pieces(color ^ 1) ^= to;
-				tmp &= tmp - 1;
 			}
 		}
 		halfmoves = oldhm + 1;
 		bitboard tmp = mv;
 		tmp &= ~occ;
 		while (tmp){
-			bitboard to = tmp & -tmp;
+			bitboard to = pop_lsb(tmp);
 			bitboard tf = to | from;
 			square(&kingSq, to);
 			Pieces[KING | color] ^= tf;
@@ -2690,7 +2653,6 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			}
 			Pieces[KING | color] ^= tf;
 			All_Pieces(color) ^= tf;
-			tmp &= tmp - 1;
 		}
 		castling = oldcastling;
 		zobr ^= ct;
@@ -2790,15 +2752,10 @@ template<int color> bool Board::stalemate(){
 	bitboard to, tf;
 	unsigned long int kingSq;
 	square(&kingSq, Pieces[KING | color]);
-	while (moving != 0){
-		to = moving & -moving;
-		if (color == white){
-			tf = to | (to >> 8);
-		} else {
-			tf = to | (to << 8);
-		}
+	while (moving){
+		to = pop_lsb(moving);
+		tf = to | ((color == white) ? (to >> 8) : (to << 8));
 		if (validPosition<color>(occ ^ tf, kingSq)) return false;
-		moving &= moving - 1;
 	}
 	if (color==white){
 		moving2 <<= 8;
@@ -2808,15 +2765,10 @@ template<int color> bool Board::stalemate(){
 		moving2 &= dfRank_b;
 	}
 	moving2 &= empty;
-	while (moving2 != 0){
-		to = moving2 & -moving2;
-		if (color == white){
-			tf = to | (to >> 16);
-		} else {
-			tf = to | (to << 16);
-		}
+	while (moving2){
+		to = pop_lsb(moving2);
+		tf = to | ((color == white) ? (to >> 16) : (to << 16));
 		if (validPosition<color>(occ ^ tf, kingSq)) return false;
-		moving2 &= moving2 - 1;
 	}
 	bitboard from = Pieces[KING | color];
 	unsigned long int fromSq, tsq;
@@ -2824,19 +2776,18 @@ template<int color> bool Board::stalemate(){
 	bitboard att = KingMoves[fromSq];
 	moving = empty & att;
 	occ ^= from;
-	while (moving != 0){
-		to = moving & -moving;
+	while (moving){
+		to = pop_lsb(moving);
 		square(&tsq, to);
 		if (notAttacked<color^1>(to, occ^to, tsq)) {
 			occ ^= from;
 			return false;
 		}
-		moving &= moving - 1;
 	}
 	for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 		moving = Pieces[captured] & att;
-		while (moving != 0){
-			to = moving & -moving;
+		while (moving){
+			to = pop_lsb(moving);
 			Pieces[captured] ^= to;
 			square(&tsq, to);
 			res = notAttacked<color^1>(to, occ, tsq);
@@ -2845,109 +2796,96 @@ template<int color> bool Board::stalemate(){
 				occ ^= from;
 				return false;
 			}
-			moving &= moving - 1;
 		}
 	}
 	occ ^= from;
 	bitboard temp = Pieces[KNIGHT | color];
-	while (temp != 0){
-		from = temp & -temp;
+	while (temp){
+		from = pop_lsb(temp);
 		square(&fromSq, from);
 		att = KnightMoves[fromSq];
 		moving = empty & att;
-		while (moving != 0){
-			to = moving & -moving;
+		while (moving){
+			to = pop_lsb(moving);
 			tf = to | from;
 			if (validPosition<color>(occ ^ tf, kingSq)) return false;
-			moving &= moving - 1;
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving != 0){
-				to = moving & -moving;
+			while (moving){
+				to = pop_lsb(moving);
 				Pieces[captured] ^= to;
 				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
-				moving &= moving - 1;
 			}
 		}
-		temp &= temp - 1;
 	}
 	temp = Pieces[BISHOP | color];
-	while (temp != 0){
-		from = temp & -temp;
+	while (temp){
+		from = pop_lsb(temp);
 		square(&fromSq, from);
 		att = bishopAttacks(occ, fromSq);
 		moving = empty & att;
-		while (moving != 0){
-			to = moving & -moving;
+		while (moving){
+			to = pop_lsb(moving);
 			tf = to | from;
 			if (validPosition<color>(occ ^ tf, kingSq)) return false;
-			moving &= moving - 1;
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving != 0){
-				to = moving & -moving;
+			while (moving){
+				to = pop_lsb(moving);
 				Pieces[captured] ^= to;
 				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
-				moving &= moving - 1;
 			}
 		}
-		temp &= temp - 1;
 	}
 	temp = Pieces[ROOK | color];
-	while (temp != 0){
-		from = temp & -temp;
+	while (temp){
+		from = pop_lsb(temp);
 		square(&fromSq, from);
 		att = rookAttacks(occ, fromSq);
 		moving = empty & att;
-		while (moving != 0){
-			to = moving & -moving;
+		while (moving){
+			to = pop_lsb(moving);
 			tf = to | from;
 			if (validPosition<color>(occ ^ tf, kingSq)) return false;
-			moving &= moving - 1;
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving != 0){
-				to = moving & -moving;
+			while (moving){
+				to = pop_lsb(moving);
 				Pieces[captured] ^= to;
 				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
-				moving &= moving - 1;
 			}
 		}
-		temp &= temp - 1;
 	}
 	temp = Pieces[QUEEN | color];
-	while (temp != 0){
-		from = temp & -temp;
+	while (temp){
+		from = pop_lsb(temp);
 		square(&fromSq, from);
 		att = queenAttacks(occ, fromSq);
 		moving = empty & att;
-		while (moving != 0){
-			to = moving & -moving;
+		while (moving){
+			to = pop_lsb(moving);
 			tf = to | from;
 			if (validPosition<color>(occ ^ tf, kingSq)) return false;
-			moving &= moving - 1;
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving != 0){
-				to = moving & -moving;
+			while (moving){
+				to = pop_lsb(moving);
 				Pieces[captured] ^= to;
 				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
-				moving &= moving - 1;
 			}
 		}
-		temp &= temp - 1;
 	}
 	bitboard attacking[2], attc;
 	if (color==white){
@@ -2960,23 +2898,18 @@ template<int color> bool Board::stalemate(){
 	for (int captured = QUEEN | (color^1); captured >= 0 ; captured-=2){
 		for (int diff = ((color==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 			attc = attacking[at] & Pieces[captured];
-			while (attc!=0){
-				to = attc & -attc;
-				if (color == white){
-					from = to >> diff;
-				} else {
-					from = to << -diff;
-				}
+			while (attc){
+				to = pop_lsb(attc);
+				from = (color == white) ? (to >> diff) : (to << -diff);
 				tf = to | from;
 				Pieces[captured] ^= to;
 				res = validPosition<color>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
-				attc &= attc - 1;
 			}
 		}
 	}
-	if (enPassant!=0){
+	if (enPassant){
 		if (color == white){
 			moving = (enPassant >> 9) | (enPassant >> 7);
 		} else {
@@ -2984,14 +2917,13 @@ template<int color> bool Board::stalemate(){
 		}
 		bitboard cpt;
 		moving &= Pieces[PAWN | color];
-		while (moving != 0){
-			from = moving & -moving;
+		while (moving){
+			from = pop_lsb(moving);
 			cpt = (color == white) ? (enPassant >> 8) : (enPassant << 8);
 			Pieces[PAWN | (color ^ 1)] ^= cpt;
 			res = validPosition<color>(occ ^ cpt ^ from ^ enPassant, kingSq);
 			Pieces[PAWN | (color ^ 1)] ^= cpt;
 			if (res) return false;
-			moving &= moving - 1;
 		}
 	}
 	//If castling was available, King would had a normal move as well!

@@ -33,6 +33,12 @@ inline int rank(const int &index){
 	}
 #endif
 
+inline bitboard pop_lsb(bitboard &bb){
+	bitboard tmp = bb & -bb;
+	bb ^= tmp;
+	return tmp;
+}
+
 inline void printbb(bitboard bb){
 	int i;
 	for (int y = 7 ; y >= 0 ; --y){
