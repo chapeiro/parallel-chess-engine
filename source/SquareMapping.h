@@ -23,12 +23,14 @@ inline int rank(const int &index){
 
 #ifdef _MSC_VER
     #include <intrin.h>
-	inline void square(unsigned long int* index, bitboard bb){
-		_BitScanForward64(index, bb);
+	inline unsigned long int square(bitboard bb){
+		unsigned long int index;
+		_BitScanForward64(&index, bb);
+		return index;
 	}
 #else
-	inline void square(unsigned long int* index, bitboard bb){
-		*index = __builtin_ctzll (bb);/**/
+	inline unsigned long int square(bitboard bb){
+		return __builtin_ctzll (bb);/**/
 		//return magictable[(b*magic) >> 58];
 	}
 #endif

@@ -265,8 +265,7 @@ void Board::make(chapeiro::move m){
 				updatePieces(from, playing | PAWN);
 				updatePieces(to, playing | PAWN);
 				enPassant = filled::normal[(from+to)/2];
-				unsigned long int tmpSq;
-				square(&tmpSq, enPassant);
+				unsigned long int tmpSq = square(enPassant);
 				zobr ^= zobrist::enPassant[7&tmpSq];
 			} else {
 				//en passant
@@ -484,9 +483,8 @@ void Board::print(){
 			std::cerr << ndbgline << "Black " << PiecesName[i>>1] << ": \n";
 			printbb(Pieces[i]);
 		}
-		unsigned long int kingSqW, kingSqB;
-		square(&kingSqW, Pieces[KING | white]);
-		square(&kingSqB, Pieces[KING | black]);
+		unsigned long int kingSqW = square(Pieces[KING | white]);
+		unsigned long int kingSqB = square(Pieces[KING | black]);
 		std::cerr << ndbgline << "White King square : " << kingSqW << "\n";
 		std::cerr << ndbgline << "Black King square : " << kingSqB << "\n";
 		const bitboard occ = All_Pieces(white) | All_Pieces(black);
