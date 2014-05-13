@@ -41,9 +41,9 @@ int main(){
 	char modec[256];
 	string mode;
 	do {
-		scanf(" %256[^\n]s\n", modec);//getline(cin, mode);
+		if (scanf(" %256[^\n]s\n", modec) == EOF) break;//getline(cin, mode);
 		mode = modec;
-		if (mode.compare("uci")==0){
+		if (mode.find("uci")!=string::npos){
 			return uci();
 		} else if (mode.compare("xboard")==0){
 			cout << "xboard protocol currently not supported" << endl;
@@ -137,6 +137,13 @@ int main(){
 				cout << "No" << endl;
 			} else {
 				cout << "Yes" << endl;
+			}
+		} else if (mode.compare("Is bitboard 64bit") == 0){
+			if (sizeof(bitboard) == 8){
+				cout << "Yes" << endl;
+			} else {
+				cout << "No." << endl;
+				cout << "(Warning: strange results may occur with bitboards of size: " << (sizeof(bitboard)*8) << "bytes)" << endl;
 			}
 		}
 	} while (true);

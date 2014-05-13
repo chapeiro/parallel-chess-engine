@@ -71,6 +71,8 @@ const int Value::BpawnSq[64] = {
 		 0,  0,  0,  0,  0,  0,  0,  0
 };
 
+bool interruption_requested;
+
 Board* Board::createBoard(const char FEN[]) {
 	char fenBoard[71], fenEnP[3];
 	char fenCastling[] = { '-', '-', '-', '-', '\0'};
@@ -664,7 +666,7 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 #if defined _MSC_VER && _MSC_VER <= 1600
 		if (elapsedTime.total_milliseconds() != 0ull) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.total_milliseconds());
 #else
-		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000ull);
+		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000.0);
 #endif
 		extrPv = new Board(this);
 		std::cout << " pv " << extrPv->extractPV(depth);

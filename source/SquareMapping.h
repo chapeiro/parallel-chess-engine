@@ -8,6 +8,8 @@
 #ifndef SQUAREMAPPING_H_
 #define SQUAREMAPPING_H_
 #include "MagicsAndPrecomputedData.h"
+#include <assert.h>
+#include <iostream>
 
 inline int index(const int &x, const int &y){
 	return (y << 3) | (7 ^ x);
@@ -29,9 +31,9 @@ inline int rank(const int &index){
 		return index;
 	}
 #else
-	inline unsigned long int square(bitboard bb){
-		return __builtin_ctzll (bb);/**/
-		//return magictable[(b*magic) >> 58];
+	inline void square(unsigned long int &index, bitboard bb){
+		index = __builtin_ctzll(bb);
+		//index = magictable[(b*magic) >> 58];
 	}
 #endif
 
