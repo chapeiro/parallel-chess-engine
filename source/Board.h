@@ -199,7 +199,6 @@ class Board {
 		int lastHistoryEntry;
 		int pieceScore;
 		thread *searchThread;
-		bool interruption_requested;
 
 	public:
 		//for Perft
@@ -465,11 +464,13 @@ template<SearchMode mode, int color, bool root> int Board::search(int alpha, int
 #endif
 
 	//move state forward (halfmoves (oldhm), fullmoves (fullmoves+{0, 1}(color)), enPassant (tmpEnPassant)
-	unsigned long int enSq;
+	unsigned long int enSq=0;
 	int oldhm (halfmoves);
-	square( &enSq, enPassant );
-	enSq &= 7;
-	if (enPassant) zobr ^= zobrist::enPassant[enSq];
+	if (enPassant){
+		square(enSq, enPassant );
+		enSq &= 7;
+		zobr ^= zobrist::enPassant[enSq];
+	}
 	bitboard tmpEnPassant (enPassant);
 	fullmoves += color;							//if (color==black) ++fullmoves;
 	enPassant = bitboard(0);
@@ -487,10 +488,13 @@ template<SearchMode mode, int color, bool root> int Board::search(int alpha, int
 	unsigned long int bestProm (0);
 
 	unsigned long int kingSq;
-	square(&kingSq, Pieces[KING | color]);
+	square(kingSq, Pieces[KING | color]);
+	const bitboard occ = All_Pieces(white) | All_Pieces(black);
+#ifndef NDEBUG
 	bitboard oldP[(KING | black)+1];
 	for (int i = 0 ; i <= (KING | black) ; ++i) oldP[i] = Pieces[i];
 	bitboard all = 0;
+	bitboard oldAll = All_Pieces(color);
 	for (int i = PAWN | color ; i <= (KING | color) ; i += 2) all |= Pieces[i];
 	ASSUME(All_Pieces(color) == all);
 	/**
@@ -504,13 +508,12 @@ go infinite
 	all = 0;
 	for (int i = PAWN | (color^1) ; i <= (KING | (color^1)) ; i += 2) all |= Pieces[i];
 	ASSUME(All_Pieces(color^1) == all);
-	const bitboard occ = All_Pieces(white) | All_Pieces(black);
-	bitboard oldAll = All_Pieces(color);
+#endif
 #ifndef NO_TRANSPOSITION_TABLE
 #ifndef NO_KILLER_MOVE
 	if (mode != Perft){
 		if (killerMove != NULL_MOVE){
-			bitboard tmp = occ;
+//FIXME unused. remove ?			bitboard tmp = occ;
 			int killerFromSq = getTTMove_From(killerMove);
 			int killerToSq = getTTMove_To(killerMove);
 			bitboard killerFrom = bitboard(1) << killerFromSq;
@@ -735,7 +738,7 @@ go infinite
 							Pieces[PAWN | color] ^= killerFrom;
 							ASSUME(toPiece >= (PAWN | white));
 							ASSUME(toPiece <= (KING | black));
-							if ((toPiece & colormask) != color) std::cout << std::dec << toPiece << std::endl;
+							if ((toPiece & colormask) != color) std::cout << "lkl" << std::dec << toPiece << std::endl;
 							ASSUME((toPiece & colormask) == color);
 							ASSUME((Pieces[toPiece] & killerTo) == 0);
 							Pieces[toPiece] ^= killerTo;
@@ -781,11 +784,14 @@ go infinite
 	//TODO add heuristics
 	bitboard checkedBy = kingIsAttackedBy<color>(occ, kingSq);
 	//FIXME REMOVE
+#ifndef NDEBUG
 	all = 0;
 	for (int i = PAWN | color ; i <= (KING | color) ; i += 2) all |= Pieces[i];
-	for (int i = 0 ; i <= (KING | black) ; ++i) if (oldP[i] != Pieces[i]) std::cout << i << std::hex << Pieces[i] << oldP[i] << std::endl;
+	for (int i = 0 ; i <= (KING | black) ; ++i) if (oldP[i] != Pieces[i]) std::cout << "dif:" << i << std::hex << Pieces[i] << oldP[i] << std::endl;
 	ASSUME(oldAll == All_Pieces(color));
 	ASSUME(all == oldAll);
+#endif
+
 	if (checkedBy == bitboard(0)){
 		bitboard nPinnedPawn = getNPinnedPawns<color>(occ, kingSq);
 		bitboard attacking[2] = {Pieces[PAWN | color], Pieces[PAWN | color]};
@@ -829,7 +835,7 @@ go infinite
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
 					Pieces[PAWN | color] ^= from;
-					square(&toSq, to);
+					square(toSq, to);
 					zobr ^= zobrist::keys[toSq][captured];
 					zobr ^= zobrist::keys[toSq-diff][PAWN | color];
 					for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
@@ -897,6 +903,23 @@ go infinite
 			attacking[1] &= notfile7 & notlastRank_b;
 		}
 		for (int captured = QUEEN | (color^1); captured >= 0 ; captured-=2){
+#ifndef NDEBUG
+	all = 0;
+	oldAll = All_Pieces(color);
+	for (int i = PAWN | color ; i <= (KING | color) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color) == all);
+	/**
+uci
+isready
+ucinewgame
+isready
+position startpos moves g1f3 g8f6 d2d4 d7d5 c2c4 c7c6 e2e3 c8g4 b1c3 e7e6 h2h3 g4h5 g2g4 h5g6 f3e5 b8d7 e5g6 h7g6 d1b3 d8c7 f1g2 d5c4 b3c4 e8c8 g4g5 f6d5 g2d5 e6d5 c4b3 d8e8 e1f1 d7b6 h3h4 f7f6 g5f6 g7f6 h1g1 h8h4 g1g6 c7h7
+go infinite
+	 */
+	all = 0;
+	for (int i = PAWN | (color^1) ; i <= (KING | (color^1)) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color^1) == all);
+#endif
 			pieceScore -= Value::piece[captured];
 			for (int diff = ((color==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 				bitboard tmp = attacking[at] & Pieces[captured];
@@ -909,21 +932,59 @@ go infinite
 						from = to << -diff;
 					}
 					bitboard tf = to | from;
-					square(&toSq, to);
+					square(toSq, to);
 					Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 					toggle ^= zobrist::keys[toSq-diff][PAWN | color];
 					toggle ^= zobrist::keys[toSq][captured];
+assert(from & Pieces[PAWN | color]);
+assert(to   & Pieces[captured]);
+assert(!(to & ~Pieces[captured]));
+#ifndef NDEBUG
+	all = 0;
+	oldAll = All_Pieces(color);
+	for (int i = PAWN | color ; i <= (KING | color) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color) == all);
+	all = 0;
+	for (int i = PAWN | (color^1) ; i <= (KING | (color^1)) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color^1) == all);
+#endif
 					Pieces[PAWN | color] ^= tf;
 					Pieces[captured] ^= to;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
 					zobr ^= toggle;
-					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
+#ifndef NDEBUG
+	all = 0;
+	oldAll = All_Pieces(color);
+	for (int i = PAWN | color ; i <= (KING | color) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color) == all);
+	all = 0;
+	for (int i = PAWN | (color^1) ; i <= (KING | (color^1)) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color^1) == all);
+#endif
+					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score); //FIXME wrong all above!!!
 					zobr ^= toggle;
 					Pieces[PAWN | color] ^= tf;
 					Pieces[captured] ^= to;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
+#ifndef NDEBUG
+	all = 0;
+	oldAll = All_Pieces(color);
+	for (int i = PAWN | color ; i <= (KING | color) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color) == all);
+	/**
+uci
+isready
+ucinewgame
+isready
+position startpos moves g1f3 g8f6 d2d4 d7d5 c2c4 c7c6 e2e3 c8g4 b1c3 e7e6 h2h3 g4h5 g2g4 h5g6 f3e5 b8d7 e5g6 h7g6 d1b3 d8c7 f1g2 d5c4 b3c4 e8c8 g4g5 f6d5 g2d5 e6d5 c4b3 d8e8 e1f1 d7b6 h3h4 f7f6 g5f6 g7f6 h1g1 h8h4 g1g6 c7h7
+go infinite
+	 */
+	all = 0;
+	for (int i = PAWN | (color^1) ; i <= (KING | (color^1)) ; i += 2) all |= Pieces[i];
+	ASSUME(All_Pieces(color^1) == all);
+#endif
 					if( score >= beta ) {
 						pieceScore += Value::piece[captured];
 
@@ -959,7 +1020,7 @@ go infinite
 					cp <<= 8;
 				}
 				unsigned long int toSq;
-				square(&toSq, tmpEnPassant);
+				square(toSq, tmpEnPassant);
 				Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 				toggle ^= zobrist::keys[toSq-diff][PAWN | color];
 				toggle ^= zobrist::keys[toSq+(color==white)?-8:8][PAWN | (color ^ 1)];
@@ -1016,7 +1077,7 @@ go infinite
 				}
 				bitboard tf = to | from;
 				unsigned long int toSq;
-				square(&toSq, to);
+				square(toSq, to);
 				All_Pieces(color) ^= tf;
 				Pieces[PAWN | color] ^= from;
 				zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
@@ -1067,14 +1128,14 @@ go infinite
 #undef SIZE
 		bitboard KAttack = KingMoves[kingSq];
 		unsigned long int firstRook, firstQueen;
-		TargetSquareGenerator:{
+		{ //TargetSquareGenerator:
 			int dr;
 			bitboard tmp = Pieces[KNIGHT | color];
 			//TODO Only knights that are not pinned can move, so tmp's population is predictable from here
 			while (tmp){
 				bitboard xRay;
 				frombb[n] = tmp & -tmp;
-				square(fromSq+n, frombb[n]);
+				square(*(fromSq+n), frombb[n]);
 				dr = direction[kingSq][fromSq[n]];
 				//A pinned knight has no legal moves.
 				if (dr == WRONG_PIECE || (rays[kingSq][fromSq[n]] & occ) != 0 ||
@@ -1093,7 +1154,7 @@ go infinite
 			tmp = Pieces[BISHOP | color];
 			while (tmp){
 				frombb[n] = tmp & -tmp;
-				square(fromSq+n, frombb[n]);
+				square(*(fromSq+n), frombb[n]);
 				attack[n] = bishopAttacks(occ, fromSq[n]);
 				piecet[n] = BISHOP | color;
 				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
@@ -1104,7 +1165,7 @@ go infinite
 			tmp = Pieces[ROOK | color];
 			while (tmp){
 				frombb[n] = tmp & -tmp;
-				square(fromSq+n, frombb[n]);
+				square(*(fromSq+n), frombb[n]);
 				attack[n] = rookAttacks(occ, fromSq[n]);
 				piecet[n] = ROOK | color;
 				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
@@ -1115,7 +1176,7 @@ go infinite
 			tmp = Pieces[QUEEN | color];
 			while (tmp){
 				frombb[n] = tmp & -tmp;
-				square(fromSq+n, frombb[n]);
+				square(*(fromSq+n), frombb[n]);
 				attack[n] = queenAttacks(occ, fromSq[n]);
 				piecet[n] = QUEEN | color;
 				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
@@ -1136,7 +1197,7 @@ go infinite
 						bitboard to = tmp & -tmp;
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][captured];
 						toggle ^= zobrist::keys[toSq][piecet[i]];
 						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
@@ -1174,7 +1235,7 @@ go infinite
 				while (tmp){
 					bitboard to = tmp & -tmp;
 					unsigned long int nkSq;
-					square(&nkSq, to);
+					square(nkSq, to);
 					bitboard tf = to | Pieces[KING | color];
 					Pieces[captured] ^= to;
 					Pieces[KING | color] ^= tf;
@@ -1226,7 +1287,7 @@ go infinite
 						bitboard to = tmp & -tmp;
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][piecet[i]];
 						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
 						All_Pieces(color) ^= tf;
@@ -1258,7 +1319,7 @@ go infinite
 				while (tmp){
 					bitboard to = tmp & -tmp;
 					unsigned long int nkSq;
-					square(&nkSq, to);
+					square(nkSq, to);
 					bitboard tf = to | Pieces[KING | color];
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
@@ -1305,7 +1366,7 @@ go infinite
 						bitboard to = tmp & -tmp;
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][captured];
 						toggle ^= zobrist::keys[toSq][piecet[i]];
 						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
@@ -1350,7 +1411,7 @@ go infinite
 						bitboard to = tmp & -tmp;
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][captured];
 						toggle ^= zobrist::keys[toSq][ROOK | color];
 						toggle ^= zobrist::keys[fromSq[i]][ROOK | color];
@@ -1397,7 +1458,7 @@ go infinite
 						bitboard to = tmp & -tmp;
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][captured];
 						toggle ^= zobrist::keys[toSq][QUEEN | color];
 						toggle ^= zobrist::keys[fromSq[i]][QUEEN | color];
@@ -1439,7 +1500,7 @@ go infinite
 				while (tmp){
 					bitboard to = tmp & -tmp;
 					unsigned long int nkSq;
-					square(&nkSq, to);
+					square(nkSq, to);
 					bitboard tf = to | Pieces[KING | color];
 					Pieces[captured] ^= to;
 					Pieces[KING | color] ^= tf;
@@ -1576,7 +1637,7 @@ go infinite
 						bitboard to = tmp & -tmp;
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][piecet[i]];
 						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
 						All_Pieces(color) ^= tf;
@@ -1614,7 +1675,7 @@ go infinite
 						bitboard to = tmp & -tmp;
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][ROOK | color];
 						toggle ^= zobrist::keys[fromSq[i]][ROOK | color];
 						All_Pieces(color) ^= tf;
@@ -1655,7 +1716,7 @@ go infinite
 						bitboard to = tmp & -tmp;
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq;
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][QUEEN | color];
 						toggle ^= zobrist::keys[fromSq[i]][QUEEN | color];
 						All_Pieces(color) ^= tf;
@@ -1692,7 +1753,7 @@ go infinite
 					bitboard to = tmp & -tmp;
 					bitboard tf = to | Pieces[KING | color];
 					unsigned long int nkSq;
-					square(&nkSq, to);
+					square(nkSq, to);
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
 					if (validPosition<color>(nkSq)){
@@ -1753,7 +1814,7 @@ go infinite
 					tf = to | (to << 8);
 				}
 				unsigned long int toSq;
-				square(&toSq, to);
+				square(toSq, to);
 				Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 				toggle ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
 				All_Pieces(color) ^= tf;
@@ -1797,8 +1858,8 @@ go infinite
 					enPassant = to << 8;
 				}
 				unsigned long int toSq, tmpSq;
-				square(&toSq, to);
-				square(&tmpSq, enPassant);
+				square(toSq, to);
+				square(tmpSq, enPassant);
 				Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 				toggle ^= zobrist::keys[toSq+((color==white)?-16:16)][PAWN | color];
 				toggle ^= zobrist::enPassant[7&tmpSq];
@@ -1835,7 +1896,7 @@ go infinite
 		if (( checkedBy & (checkedBy - 1) ) == bitboard(0)){
 			//1) Capturing the attacking piece
 			unsigned long int toSq;
-			square(&toSq, checkedBy);
+			square(toSq, checkedBy);
 			int attacker = QUEEN | (color ^ 1);
 			while ((Pieces[attacker] & checkedBy)==0) attacker -= 2;
 			zobr ^= zobrist::keys[toSq][attacker];
@@ -1893,7 +1954,7 @@ go infinite
 							All_Pieces(color) ^= tf;
 							if (validPositionNonChecked<color>(kingSq)){
 								unsigned long int toenpsq;
-								square(&toenpsq, tmpEnPassant);
+								square(toenpsq, tmpEnPassant);
 								Zobrist toggle = zobrist::keys[toenpsq][PAWN | color];
 								toggle ^= zobrist::keys[toenpsq - diff][PAWN | color];
 								Pieces[PAWN | color] ^= tf;
@@ -1991,7 +2052,7 @@ go infinite
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
 					unsigned long int fromSq;
-					square(&fromSq, from);
+					square(fromSq, from);
 					Zobrist toggle = zobrist::keys[fromSq][KNIGHT | color];
 					toggle ^= zobrist::keys[toSq][KNIGHT | color];
 					Pieces[KNIGHT | color] ^= tf;
@@ -2032,7 +2093,7 @@ go infinite
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
 					unsigned long int fromSq;
-					square(&fromSq, from);
+					square(fromSq, from);
 					Zobrist toggle = zobrist::keys[fromSq][BISHOP | color];
 					toggle ^= zobrist::keys[toSq][BISHOP | color];
 					Pieces[BISHOP | color] ^= tf;
@@ -2077,7 +2138,7 @@ go infinite
 				if (validPositionNonChecked<color>(kingSq)){
 					castling &= ~from;
 					unsigned long int fromSq;
-					square(&fromSq, from);
+					square(fromSq, from);
 					Zobrist toggle = zobrist::keys[fromSq][ROOK | color];
 					toggle ^= zobrist::keys[toSq][ROOK | color];
 					toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
@@ -2122,7 +2183,7 @@ go infinite
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
 					unsigned long int fromSq;
-					square(&fromSq, from);
+					square(fromSq, from);
 					Zobrist toggle = zobrist::keys[fromSq][QUEEN | color];
 					toggle ^= zobrist::keys[toSq][QUEEN | color];
 					Pieces[QUEEN | color] ^= tf;
@@ -2163,7 +2224,7 @@ go infinite
 			//2) Block it if it is a ray piece
 			//ray is a subset of empty
 			unsigned long int tmpSq;
-			square(&tmpSq, Pieces[KING | color]);
+			square(tmpSq, Pieces[KING | color]);
 			bitboard ray = rays[tmpSq][toSq];
 			/**
 			 * FIXME
@@ -2201,7 +2262,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 #ifdef HYPERPOSITION
 			if ((ray & tmpEnPassant) != 0){
 				unsigned long int tmpSq2;
-				square(&tmpSq2, tmpEnPassant);
+				square(tmpSq2, tmpEnPassant);
 				bitboard attacker, cp = tmpEnPassant;
 				if (color == white){
 					cp >>= 8;
@@ -2293,8 +2354,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				}
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)) {
-					square(&toSq, to);
-					square(&tmpSq, enPassant);
+					square(toSq, to);
+					square(tmpSq, enPassant);
 					Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 					toggle ^= zobrist::keys[toSq+((color==white)?-16:16)][PAWN | color];
 					toggle ^= zobrist::enPassant[7&tmpSq];
@@ -2337,7 +2398,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				bitboard tf = to | from;
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)) {
-					square(&toSq, to);
+					square(toSq, to);
 					Pieces[PAWN | color] ^= from;
 					pieceScore -= Value::piece[PAWN | color];
 					zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
@@ -2387,7 +2448,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				}
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)) {
-					square(&toSq, to);
+					square(toSq, to);
 					Zobrist toggle = zobrist::keys[toSq][PAWN | color];
 					toggle ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
 					Pieces[PAWN | color] ^= tf;
@@ -2422,14 +2483,14 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			while (tmpP){
 				bitboard from = tmpP & -tmpP;
 				unsigned long int fromSq;
-				square(&fromSq, from);
+				square(fromSq, from);
 				tmp = ray & KnightMoves[fromSq];
 				while (tmp){
 					bitboard to = tmp & -tmp;
 					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][KNIGHT | color];
 						toggle ^= zobrist::keys[fromSq][KNIGHT | color];
 						Pieces[KNIGHT | color] ^= tf;
@@ -2464,14 +2525,14 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			while (tmpP){
 				bitboard from = tmpP & -tmpP;
 				unsigned long int fromSq;
-				square(&fromSq, from);
+				square(fromSq, from);
 				tmp = ray & bishopAttacks(occ, fromSq);
 				while (tmp){
 					bitboard to = tmp & -tmp;
 					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][BISHOP | color];
 						toggle ^= zobrist::keys[fromSq][BISHOP | color];
 						Pieces[BISHOP | color] ^= tf;
@@ -2508,14 +2569,14 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			while (tmpP){
 				bitboard from = tmpP & -tmpP;
 				unsigned long int fromSq;
-				square(&fromSq, from);
+				square(fromSq, from);
 				tmp = ray & rookAttacks(occ, fromSq);
 				while (tmp){
 					bitboard to = tmp & -tmp;
 					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][ROOK | color];
 						toggle ^= zobrist::keys[fromSq][ROOK | color];
 						Pieces[ROOK | color] ^= tf;
@@ -2550,14 +2611,14 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			while (tmpP){
 				bitboard from = tmpP & -tmpP;
 				unsigned long int fromSq;
-				square(&fromSq, from);
+				square(fromSq, from);
 				tmp = ray & queenAttacks(occ, fromSq);
 				while (tmp){
 					bitboard to = tmp & -tmp;
 					bitboard tf = to | from;
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
-						square(&toSq, to);
+						square(toSq, to);
 						Zobrist toggle = zobrist::keys[toSq][QUEEN | color];
 						toggle ^= zobrist::keys[fromSq][QUEEN | color];
 						Pieces[QUEEN | color] ^= tf;
@@ -2593,7 +2654,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		halfmoves = 0;
 		bitboard from = Pieces[KING | color];
 		unsigned long int fromSq;
-		square(&fromSq, from);
+		square(fromSq, from);
 		bitboard mv = KingMoves[fromSq];
 		bitboard tmp1 = mv;
 		bitboard oldcastling = castling;
@@ -2605,7 +2666,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			bitboard tmp = Pieces[attacker] & tmp1;
 			while (tmp){
 				bitboard to = tmp & -tmp;
-				square(&kingSq, to);
+				square(kingSq, to);
 				bitboard tf = from | to;
 				Pieces[attacker] ^= to;
 				All_Pieces(color ^ 1) ^= to;
@@ -2657,7 +2718,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		while (tmp){
 			bitboard to = tmp & -tmp;
 			bitboard tf = to | from;
-			square(&kingSq, to);
+			square(kingSq, to);
 			Pieces[KING | color] ^= tf;
 			All_Pieces(color) ^= tf;
 			if (validPosition<color>(kingSq)){
@@ -2731,7 +2792,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			dividedepth = depth;
 		}
 #else
-		std::cout << pre << getFEN(color) << '\t' << moves << std::endl;
+		std::cout << "popo"<<pre << getFEN(color) << '\t' << moves << std::endl;
 #endif
 	}
 	if (mode == Perft) return alpha + 1;
@@ -2764,8 +2825,8 @@ template<int color> inline int Board::getMove(bitboard tf, int prom){
 	ASSUME(prom < (TTMove_EnPassantPromFlag << 1));
 	ASSUME((tf & All_Pieces(color)) != bitboard(0));
 	ASSUME((tf & (~All_Pieces(color))) != bitboard(0));
-	square(&fromSq, tf & All_Pieces(color));
-	square(&toSq, tf & (~All_Pieces(color)));
+	square(fromSq, tf & All_Pieces(color));
+	square(toSq, tf & (~All_Pieces(color)));
 	ASSUME(0 <= fromSq && fromSq < 64);
 	ASSUME(0 <= toSq && toSq < 64);
 	if (tf & Pieces[PAWN | color]) {
@@ -2789,8 +2850,8 @@ template<int color> bool Board::stalemate(){
 	bitboard moving2 = moving;
 	bitboard to, tf;
 	unsigned long int kingSq;
-	square(&kingSq, Pieces[KING | color]);
-	while (moving != 0){
+	square(kingSq, Pieces[KING | color]);
+	while (moving){
 		to = moving & -moving;
 		if (color == white){
 			tf = to | (to >> 8);
@@ -2808,7 +2869,7 @@ template<int color> bool Board::stalemate(){
 		moving2 &= dfRank_b;
 	}
 	moving2 &= empty;
-	while (moving2 != 0){
+	while (moving2){
 		to = moving2 & -moving2;
 		if (color == white){
 			tf = to | (to >> 16);
@@ -2820,13 +2881,13 @@ template<int color> bool Board::stalemate(){
 	}
 	bitboard from = Pieces[KING | color];
 	unsigned long int fromSq, tsq;
-	square(&fromSq, from);
+	square(fromSq, from);
 	bitboard att = KingMoves[fromSq];
 	moving = empty & att;
 	occ ^= from;
-	while (moving != 0){
+	while (moving){
 		to = moving & -moving;
-		square(&tsq, to);
+		square(tsq, to);
 		if (notAttacked<color^1>(to, occ^to, tsq)) {
 			occ ^= from;
 			return false;
@@ -2835,10 +2896,10 @@ template<int color> bool Board::stalemate(){
 	}
 	for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 		moving = Pieces[captured] & att;
-		while (moving != 0){
+		while (moving){
 			to = moving & -moving;
 			Pieces[captured] ^= to;
-			square(&tsq, to);
+			square(tsq, to);
 			res = notAttacked<color^1>(to, occ, tsq);
 			Pieces[captured] ^= to;
 			if (res) {
@@ -2850,12 +2911,12 @@ template<int color> bool Board::stalemate(){
 	}
 	occ ^= from;
 	bitboard temp = Pieces[KNIGHT | color];
-	while (temp != 0){
+	while (temp){
 		from = temp & -temp;
-		square(&fromSq, from);
+		square(fromSq, from);
 		att = KnightMoves[fromSq];
 		moving = empty & att;
-		while (moving != 0){
+		while (moving){
 			to = moving & -moving;
 			tf = to | from;
 			if (validPosition<color>(occ ^ tf, kingSq)) return false;
@@ -2863,7 +2924,7 @@ template<int color> bool Board::stalemate(){
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving != 0){
+			while (moving){
 				to = moving & -moving;
 				Pieces[captured] ^= to;
 				res = validPosition<color>(occ ^ from, kingSq);
@@ -2875,12 +2936,12 @@ template<int color> bool Board::stalemate(){
 		temp &= temp - 1;
 	}
 	temp = Pieces[BISHOP | color];
-	while (temp != 0){
+	while (temp){
 		from = temp & -temp;
-		square(&fromSq, from);
+		square(fromSq, from);
 		att = bishopAttacks(occ, fromSq);
 		moving = empty & att;
-		while (moving != 0){
+		while (moving){
 			to = moving & -moving;
 			tf = to | from;
 			if (validPosition<color>(occ ^ tf, kingSq)) return false;
@@ -2888,7 +2949,7 @@ template<int color> bool Board::stalemate(){
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving != 0){
+			while (moving){
 				to = moving & -moving;
 				Pieces[captured] ^= to;
 				res = validPosition<color>(occ ^ from, kingSq);
@@ -2900,12 +2961,12 @@ template<int color> bool Board::stalemate(){
 		temp &= temp - 1;
 	}
 	temp = Pieces[ROOK | color];
-	while (temp != 0){
+	while (temp){
 		from = temp & -temp;
-		square(&fromSq, from);
+		square(fromSq, from);
 		att = rookAttacks(occ, fromSq);
 		moving = empty & att;
-		while (moving != 0){
+		while (moving){
 			to = moving & -moving;
 			tf = to | from;
 			if (validPosition<color>(occ ^ tf, kingSq)) return false;
@@ -2913,7 +2974,7 @@ template<int color> bool Board::stalemate(){
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving != 0){
+			while (moving){
 				to = moving & -moving;
 				Pieces[captured] ^= to;
 				res = validPosition<color>(occ ^ from, kingSq);
@@ -2925,12 +2986,12 @@ template<int color> bool Board::stalemate(){
 		temp &= temp - 1;
 	}
 	temp = Pieces[QUEEN | color];
-	while (temp != 0){
+	while (temp){
 		from = temp & -temp;
-		square(&fromSq, from);
+		square(fromSq, from);
 		att = queenAttacks(occ, fromSq);
 		moving = empty & att;
-		while (moving != 0){
+		while (moving){
 			to = moving & -moving;
 			tf = to | from;
 			if (validPosition<color>(occ ^ tf, kingSq)) return false;
@@ -2938,7 +2999,7 @@ template<int color> bool Board::stalemate(){
 		}
 		for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving != 0){
+			while (moving){
 				to = moving & -moving;
 				Pieces[captured] ^= to;
 				res = validPosition<color>(occ ^ from, kingSq);
@@ -2960,7 +3021,7 @@ template<int color> bool Board::stalemate(){
 	for (int captured = QUEEN | (color^1); captured >= 0 ; captured-=2){
 		for (int diff = ((color==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 			attc = attacking[at] & Pieces[captured];
-			while (attc!=0){
+			while (attc){
 				to = attc & -attc;
 				if (color == white){
 					from = to >> diff;
@@ -2976,7 +3037,7 @@ template<int color> bool Board::stalemate(){
 			}
 		}
 	}
-	if (enPassant!=0){
+	if (enPassant){
 		if (color == white){
 			moving = (enPassant >> 9) | (enPassant >> 7);
 		} else {
@@ -2984,7 +3045,7 @@ template<int color> bool Board::stalemate(){
 		}
 		bitboard cpt;
 		moving &= Pieces[PAWN | color];
-		while (moving != 0){
+		while (moving){
 			from = moving & -moving;
 			cpt = (color == white) ? (enPassant >> 8) : (enPassant << 8);
 			Pieces[PAWN | (color ^ 1)] ^= cpt;
@@ -3008,26 +3069,26 @@ template<int color> int Board::getEvaluation(int depth){
 	 * 8/8/pppppppK/NBBR1NRp/nbbrqnrP/PPPPPPPk/8/Q7 w - - 0 1
 	 */
 	unsigned long int kingSqW, kingSqB;
-	square(((color == white) ? &kingSqW : &kingSqB), Pieces[KING | color]);
+	square(kingSqW, Pieces[KING | white]);
+	square(kingSqB, Pieces[KING | black]);
 	if (stalemate<color>()){
 		if (validPosition<color>(((color == white) ? kingSqW : kingSqB))) return 0; //stalemate
 		if (color == white) return -Value::MAT+rootDepth-depth;	//White Mated
 		return Value::MAT-rootDepth+depth;						//Black Mated
 	}
-	square(((color == black) ? &kingSqW : &kingSqB), Pieces[KING | color]);
 	int score = pieceScore;
 	score += Value::kingSq[kingSqW] - Value::kingSq[kingSqB];
 	bitboard knights = Pieces[KNIGHT | white];
 	while (knights) {
 		unsigned long int sq;
-		square(&sq, knights & -knights);
+		square(sq, knights & -knights);
 		score += Value::knightSq[sq];
 		knights &= knights-1;
 	}
 	knights = Pieces[KNIGHT | black];
 	while (knights) {
 		unsigned long int sq;
-		square(&sq, knights & -knights);
+		square(sq, knights & -knights);
 		score -= Value::knightSq[sq];
 		knights &= knights-1;
 	}
@@ -3090,14 +3151,14 @@ template<int color> inline bitboard Board::getNPinnedPawns(bitboard occ, int kin
 	tmp &= Pieces[ROOK | (color ^ 1)] | Pieces[QUEEN | (color ^ 1)];
 	unsigned long int sq;
 	while (tmp){
-		square(&sq, tmp);
+		square(sq, tmp & -tmp);
 		pinnedPawns |= rays[kingSq][sq];
 		tmp &= tmp - 1;
 	}
 	tmp = bishopAttacks(occ & ~bishopAttacks(occ, kingSq), kingSq);
 	tmp &= Pieces[BISHOP | (color ^ 1)] | Pieces[QUEEN | (color ^ 1)];
 	while (tmp){
-		square(&sq, tmp);
+		square(sq, tmp & -tmp);
 		pinnedPawns |= rays[kingSq][sq];
 		tmp &= tmp - 1;
 	}
@@ -3124,7 +3185,7 @@ inline int Board::evaluatePawnStructure(){
 	int pscore = 0;
 	while (pawns){
 		unsigned long int sq;
-		square(&sq, pawns & -pawns);
+		square(sq, pawns & -pawns);
 		pscore += Value::WpawnSq[sq];
 		pawns &= pawns-1;
 	}
@@ -3132,7 +3193,7 @@ inline int Board::evaluatePawnStructure(){
 //	emptyFiles |= pawns;
 	while (pawns){
 		unsigned long int sq;
-		square(&sq, pawns & -pawns);
+		square(sq, pawns & -pawns);
 		pscore -= Value::BpawnSq[sq];
 		pawns &= pawns-1;
 	}

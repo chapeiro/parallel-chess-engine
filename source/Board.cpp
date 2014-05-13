@@ -71,6 +71,8 @@ const int Value::BpawnSq[64] = {
 		 0,  0,  0,  0,  0,  0,  0,  0
 };
 
+bool interruption_requested;
+
 Board* Board::createBoard(const char FEN[]) {
 	char fenBoard[71], fenEnP[3];
 	char fenCastling[] = { '-', '-', '-', '-', '\0'};
@@ -266,7 +268,7 @@ void Board::make(chapeiro::move m){
 				updatePieces(to, playing | PAWN);
 				enPassant = filled::normal[(from+to)/2];
 				unsigned long int tmpSq;
-				square(&tmpSq, enPassant);
+				square(tmpSq, enPassant);
 				zobr ^= zobrist::enPassant[7&tmpSq];
 			} else {
 				//en passant
@@ -485,8 +487,8 @@ void Board::print(){
 			printbb(Pieces[i]);
 		}
 		unsigned long int kingSqW, kingSqB;
-		square(&kingSqW, Pieces[KING | white]);
-		square(&kingSqB, Pieces[KING | black]);
+		square(kingSqW, Pieces[KING | white]);
+		square(kingSqB, Pieces[KING | black]);
 		std::cerr << ndbgline << "White King square : " << kingSqW << "\n";
 		std::cerr << ndbgline << "Black King square : " << kingSqB << "\n";
 		const bitboard occ = All_Pieces(white) | All_Pieces(black);
@@ -666,9 +668,10 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 #if defined _MSC_VER && _MSC_VER <= 1600
 		if (elapsedTime.total_milliseconds() != 0ull) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.total_milliseconds());
 #else
-		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000ull);
+		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000.0);
 #endif
 		extrPv = new Board(this);
+		std::cout << "Here" << std::endl;
 		std::cout << " pv " << extrPv->extractPV(depth);
 		if (isMat(score)) {
 			std::cout << " score mate ";
@@ -686,6 +689,7 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 		if (debugcc) std::cerr << ndbgline << "Score : " << score << std::endl;
 		++depth;
 	}
+	std::cout << "Here2" << std::endl;
 	if (move != 0){
 		char m[6];
 		std::cout << "bestmove " << moveToString(move, m) << std::endl;

@@ -24,6 +24,8 @@ const int maxCheckAvoidanceShiftBits = 6;
 const int minPerftDepth = 1;
 const int maxPerftDepth = 100;
 
+extern bool interruption_requested;
+
 extern bool debugcc;
 //#define std::cout cout << "info string Chapeiro Debug : "
 void debug(std::string);
