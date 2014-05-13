@@ -185,19 +185,19 @@ extern int rootDepth;
 class Board {
 	private:
 		//State
-		bitboard Pieces[PIECESMAX];
+		cache_align bitboard Pieces[PIECESMAX];
 		bitboard White_Pieces, Black_Pieces;
 		//unsigned long int kingSq[colormask + 1];
 		Zobrist zobr;
 		bitboard enPassant;
+		int pieceScore;
+		int playing;
 		int halfmoves;
 		int fullmoves;
-		int playing;
 		bitboard castling;
 		//Memory
-		Zobrist history[256];
+		cache_align Zobrist history[256];
 		int lastHistoryEntry;
-		int pieceScore;
 		thread *searchThread;
 		bool interruption_requested;
 
@@ -297,7 +297,7 @@ inline int Board::getPieceIndex(char p){
 inline void Board::updatePieces(int sq, int ind){
 	Pieces[ind] ^= filled::normal[sq];
 	//if ( (ind & ~colormask) == KING ) kingSq[ind & colormask] = sq;
-	zobr ^= zobrist::keys[sq][ind];
+	zobr ^= zobrist::keys[ind][sq];
 	All_Pieces(ind) ^= filled::normal[sq];
 }
 
@@ -538,14 +538,14 @@ go infinite
 						key ct = zobrist::castling[(castling*castlingsmagic)>>59];
 						castling &= castlingc<color>::deactrights;
 						Zobrist toggle = ct;
-						toggle ^= zobrist::keys[3+((color==black)?56:0)][KING | color];
+						toggle ^= zobrist::keys[KING | color][3+((color==black)?56:0)];
 						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						if (killerFrom > killerTo) {
 							if ((oldCastling & castlingc<color>::KingSide & Pieces[ROOK | color]) && ((castlingc<color>::KingSideSpace & occ) == 0)){
 								kingSq = castlingc<color>::kingSqAfterKSC;
-								toggle ^= zobrist::keys[0+((color==black)?56:0)][ROOK | color];
-								toggle ^= zobrist::keys[2+((color==black)?56:0)][ROOK | color];
-								toggle ^= zobrist::keys[1+((color==black)?56:0)][KING | color];
+								toggle ^= zobrist::keys[ROOK | color][0+((color==black)?56:0)];
+								toggle ^= zobrist::keys[ROOK | color][2+((color==black)?56:0)];
+								toggle ^= zobrist::keys[KING | color][1+((color==black)?56:0)];
 								Pieces[ROOK | color] ^= castlingc<color>::KSCRT;
 								All_Pieces(color) ^= castlingc<color>::KSCFT;
 								zobr ^= toggle;
@@ -559,9 +559,9 @@ go infinite
 						} else {
 							if ((oldCastling & castlingc<color>::QueenSide & Pieces[ROOK | color]) && ((castlingc<color>::QueenSideSpace & occ) == 0)){
 								kingSq = castlingc<color>::kingSqAfterQSC;
-								toggle ^= zobrist::keys[7+((color==black)?56:0)][ROOK | color];
-								toggle ^= zobrist::keys[4+((color==black)?56:0)][ROOK | color];
-								toggle ^= zobrist::keys[5+((color==black)?56:0)][KING | color];
+								toggle ^= zobrist::keys[ROOK | color][7+((color==black)?56:0)];
+								toggle ^= zobrist::keys[ROOK | color][4+((color==black)?56:0)];
+								toggle ^= zobrist::keys[KING | color][5+((color==black)?56:0)];
 								Pieces[ROOK | color] ^= castlingc<color>::QSCRT;
 								All_Pieces(color) ^= castlingc<color>::QSCFT;
 								zobr ^= toggle;
@@ -594,8 +594,8 @@ go infinite
 						int capturedPiece = QUEEN | (color ^ 1);
 						while (((Pieces[capturedPiece] & killerTo) == 0) && capturedPiece >= 0) capturedPiece -= 2;
 						bitboard tf = killerFrom | killerTo;
-						Zobrist toggle = zobrist::keys[killerFromSq][killerPiece];
-						toggle ^= zobrist::keys[killerToSq][killerPiece];
+						Zobrist toggle = zobrist::keys[killerPiece][killerFromSq];
+						toggle ^= zobrist::keys[killerPiece][killerToSq];
 						bitboard oldCastling = castling;
 						if (killerPiece == (ROOK | color)) {
 							toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
@@ -609,7 +609,7 @@ go infinite
 						int scoreD = 0;
 						if (capturedPiece >= 0){
 							halfmoves = 0;
-							toggle ^= zobrist::keys[killerToSq][capturedPiece];
+							toggle ^= zobrist::keys[capturedPiece][killerToSq];
 							scoreD = Value::piece[capturedPiece];
 							Pieces[capturedPiece] ^= killerTo;
 							All_Pieces(color ^ 1) ^= killerTo;
@@ -681,9 +681,9 @@ go infinite
 							if (killerMoveOk) {
 								ASSUME((toPiece & colormask) == color);
 								int scoreD = Value::piece[capturedPiece] + Value::piece[PAWN | color] - Value::piece[toPiece];
-								Zobrist toggle = zobrist::keys[capturedSq][capturedPiece];
-								toggle ^= zobrist::keys[killerFromSq][PAWN | color];
-								toggle ^= zobrist::keys[killerToSq][toPiece];
+								Zobrist toggle = zobrist::keys[capturedPiece][capturedSq];
+								toggle ^= zobrist::keys[PAWN | color][killerFromSq];
+								toggle ^= zobrist::keys[toPiece][killerToSq];
 								//ASSUME((promSp <= 0xF) || (Pieces[capturedPiece] & capturedPos));
 								//ASSUME((promSp > 0xF) || (Pieces[capturedPiece] & capturedPos));
 								Pieces[capturedPiece] ^= capturedPos;
@@ -717,19 +717,18 @@ go infinite
 							}
 						} else {
 							int scoreD = Value::piece[PAWN | color] - Value::piece[toPiece];
-							Zobrist toggle = zobrist::keys[killerFromSq][PAWN | color];
-							toggle ^= zobrist::keys[killerToSq][toPiece];
+							Zobrist toggle = zobrist::keys[PAWN | color][killerFromSq];
+							toggle ^= zobrist::keys[toPiece][killerToSq];
 							if (killerToSq == (killerFromSq + ((color == white) ? 16 : -16))){
 								toggle ^= zobrist::enPassant[7&(killerFromSq + ((color == white) ? 8 : -8))];
 								enPassant = ((color == white) ? (killerFrom << 8) : (killerFrom >> 8));
 							}
 							ASSUME(Pieces[PAWN | color] & killerFrom);
-							Pieces[PAWN | color] ^= killerFrom;
 							ASSUME(toPiece >= (PAWN | white));
 							ASSUME(toPiece <= (KING | black));
-							if ((toPiece & colormask) != color) std::cout << std::dec << toPiece << std::endl;
 							ASSUME((toPiece & colormask) == color);
 							ASSUME((Pieces[toPiece] & killerTo) == 0);
+							Pieces[PAWN | color] ^= killerFrom;
 							Pieces[toPiece] ^= killerTo;
 							All_Pieces(color) ^= tf;
 							pieceScore -= scoreD;
@@ -816,20 +815,20 @@ go infinite
 					All_Pieces(color ^ 1) ^= to;
 					Pieces[PAWN | color] ^= from;
 					toSq = square(to);
-					zobr ^= zobrist::keys[toSq][captured];
-					zobr ^= zobrist::keys[toSq-diff][PAWN | color];
+					zobr ^= zobrist::keys[captured][toSq];
+					zobr ^= zobrist::keys[PAWN | color][toSq-diff];
 					for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
 						Pieces[prom] ^= to;
 						pieceScore += Value::piece[prom];
-						zobr ^= zobrist::keys[toSq][prom];
+						zobr ^= zobrist::keys[prom][toSq];
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
-						zobr ^= zobrist::keys[toSq][prom];
+						zobr ^= zobrist::keys[prom][toSq];
 						pieceScore -= Value::piece[prom];
 						Pieces[prom] ^= to;
 						if( score >= beta ) {
 							Pieces[captured] ^= to;
-							zobr ^= zobrist::keys[toSq][captured];
-							zobr ^= zobrist::keys[toSq-diff][PAWN | color];
+							zobr ^= zobrist::keys[captured][toSq];
+							zobr ^= zobrist::keys[PAWN | color][toSq-diff];
 							Pieces[PAWN | color] ^= from;
 							All_Pieces(color) ^= tf;
 							All_Pieces(color ^ 1) ^= to;
@@ -847,8 +846,8 @@ go infinite
 							bestProm = prom;
 						}
 					}
-					zobr ^= zobrist::keys[toSq][captured];
-					zobr ^= zobrist::keys[toSq-diff][PAWN | color];
+					zobr ^= zobrist::keys[captured][toSq];
+					zobr ^= zobrist::keys[PAWN | color][toSq-diff];
 					Pieces[captured] ^= to;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
@@ -887,9 +886,9 @@ go infinite
 					}
 					bitboard tf = to | from;
 					unsigned long int toSq = square(to);
-					Zobrist toggle = zobrist::keys[toSq][PAWN | color];
-					toggle ^= zobrist::keys[toSq-diff][PAWN | color];
-					toggle ^= zobrist::keys[toSq][captured];
+					Zobrist toggle = zobrist::keys[PAWN | color][toSq];
+					toggle ^= zobrist::keys[PAWN | color][toSq-diff];
+					toggle ^= zobrist::keys[captured][toSq];
 					Pieces[PAWN | color] ^= tf;
 					Pieces[captured] ^= to;
 					All_Pieces(color) ^= tf;
@@ -929,9 +928,9 @@ go infinite
 					cp <<= 8;
 				}
 				unsigned long int toSq = square(tmpEnPassant);
-				Zobrist toggle = zobrist::keys[toSq][PAWN | color];
-				toggle ^= zobrist::keys[toSq-diff][PAWN | color];
-				toggle ^= zobrist::keys[toSq+(color==white)?-8:8][PAWN | (color ^ 1)];
+				Zobrist toggle = zobrist::keys[PAWN | color][toSq];
+				toggle ^= zobrist::keys[PAWN | color][toSq-diff];
+				toggle ^= zobrist::keys[PAWN | (color ^ 1)][toSq+(color==white)?-8:8];
 				pieceScore -= Value::piece[PAWN | (color ^ 1)];
 				Pieces[PAWN | color] ^= tf;
 				Pieces[PAWN | (color^1)] ^= cp;
@@ -981,20 +980,20 @@ go infinite
 				unsigned long int toSq = square(to);
 				All_Pieces(color) ^= tf;
 				Pieces[PAWN | color] ^= from;
-				zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+				zobr ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
 				for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
 					Pieces[prom] ^= to;
 					pieceScore += Value::piece[prom];
-					zobr ^= zobrist::keys[toSq][prom];
+					zobr ^= zobrist::keys[prom][toSq];
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
-					zobr ^= zobrist::keys[toSq][prom];
+					zobr ^= zobrist::keys[prom][toSq];
 					pieceScore -= Value::piece[prom];
 					Pieces[prom] ^= to;
 					if( score >= beta ) {
 						pieceScore += Value::piece[PAWN | color];
 						Pieces[PAWN | color] ^= from;
 						All_Pieces(color) ^= tf;
-						zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+						zobr ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
 
 						prepare_beta_cutoff<mode, color>(oldhm, tmpEnPassant, enSq, depth, getMove<color>(tf, prom), beta);
 						return beta;			// fail-hard beta-cutoff
@@ -1006,7 +1005,7 @@ go infinite
 						bestProm = prom;
 					}
 				}
-				zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+				zobr ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
 				Pieces[PAWN | color] ^= from;
 				All_Pieces(color) ^= tf;
 			}
@@ -1087,9 +1086,9 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][captured];
-						toggle ^= zobrist::keys[toSq][piecet[i]];
-						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
+						Zobrist toggle = zobrist::keys[captured][toSq];
+						toggle ^= zobrist::keys[piecet[i]][toSq];
+						toggle ^= zobrist::keys[piecet[i]][fromSq[i]];
 						Pieces[captured] ^= to;
 						Pieces[piecet[i]] ^= tf;
 						All_Pieces(color) ^= tf;
@@ -1124,9 +1123,9 @@ go infinite
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
 					if (validPosition<color>(nkSq)){
-						Zobrist toggle = zobrist::keys[kingSq][captured];
-						toggle ^= zobrist::keys[kingSq][KING | color];
-						toggle ^= zobrist::keys[nkSq][KING | color];
+						Zobrist toggle = zobrist::keys[captured][kingSq];
+						toggle ^= zobrist::keys[KING | color][kingSq];
+						toggle ^= zobrist::keys[KING | color][nkSq];
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
@@ -1162,8 +1161,8 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][piecet[i]];
-						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
+						Zobrist toggle = zobrist::keys[piecet[i]][toSq];
+						toggle ^= zobrist::keys[piecet[i]][fromSq[i]];
 						All_Pieces(color) ^= tf;
 						Pieces[piecet[i]] ^= tf;
 						zobr ^= toggle;
@@ -1190,8 +1189,8 @@ go infinite
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
 					if (validPosition<color>(nkSq)){
-						Zobrist toggle = zobrist::keys[kingSq][KING | color];
-						toggle ^= zobrist::keys[nkSq][KING | color];
+						Zobrist toggle = zobrist::keys[KING | color][kingSq];
+						toggle ^= zobrist::keys[KING | color][nkSq];
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
@@ -1225,9 +1224,9 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][captured];
-						toggle ^= zobrist::keys[toSq][piecet[i]];
-						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
+						Zobrist toggle = zobrist::keys[captured][toSq];
+						toggle ^= zobrist::keys[piecet[i]][toSq];
+						toggle ^= zobrist::keys[piecet[i]][fromSq[i]];
 						Pieces[captured] ^= to;
 						Pieces[piecet[i]] ^= tf;
 						All_Pieces(color) ^= tf;
@@ -1262,9 +1261,9 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][captured];
-						toggle ^= zobrist::keys[toSq][ROOK | color];
-						toggle ^= zobrist::keys[fromSq[i]][ROOK | color];
+						Zobrist toggle = zobrist::keys[captured][toSq];
+						toggle ^= zobrist::keys[ROOK | color][toSq];
+						toggle ^= zobrist::keys[ROOK | color][fromSq[i]];
 						Pieces[captured] ^= to;
 						Pieces[ROOK | color] ^= tf;
 						All_Pieces(color) ^= tf;
@@ -1301,9 +1300,9 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][captured];
-						toggle ^= zobrist::keys[toSq][QUEEN | color];
-						toggle ^= zobrist::keys[fromSq[i]][QUEEN | color];
+						Zobrist toggle = zobrist::keys[captured][toSq];
+						toggle ^= zobrist::keys[QUEEN | color][toSq];
+						toggle ^= zobrist::keys[QUEEN | color][fromSq[i]];
 						Pieces[captured] ^= to;
 						Pieces[QUEEN | color] ^= tf;
 						All_Pieces(color) ^= tf;
@@ -1342,9 +1341,9 @@ go infinite
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
 					if (validPosition<color>(nkSq)){
-						Zobrist toggle = zobrist::keys[nkSq][captured];
-						toggle ^= zobrist::keys[nkSq][KING | color];
-						toggle ^= zobrist::keys[kingSq][KING | color];
+						Zobrist toggle = zobrist::keys[captured][nkSq];
+						toggle ^= zobrist::keys[KING | color][nkSq];
+						toggle ^= zobrist::keys[KING | color][kingSq];
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
@@ -1384,10 +1383,10 @@ go infinite
 					All_Pieces(color) ^= castlingc<color>::KSCFT;
 					if (validPosition<color>(castlingc<color>::kingSqAfterKSC)){
 						castling &= castlingc<color>::deactrights;
-						Zobrist toggle = zobrist::keys[0+((color==black)?56:0)][ROOK | color];
-						toggle ^= zobrist::keys[2+((color==black)?56:0)][ROOK | color];
-						toggle ^= zobrist::keys[3+((color==black)?56:0)][KING | color];
-						toggle ^= zobrist::keys[1+((color==black)?56:0)][KING | color];
+						Zobrist toggle = zobrist::keys[ROOK | color][0+((color==black)?56:0)];
+						toggle ^= zobrist::keys[ROOK | color][2+((color==black)?56:0)];
+						toggle ^= zobrist::keys[KING | color][3+((color==black)?56:0)];
+						toggle ^= zobrist::keys[KING | color][1+((color==black)?56:0)];
 						toggle ^= ct;
 						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						Pieces[ROOK | color] ^= castlingc<color>::KSCRT;
@@ -1418,10 +1417,10 @@ go infinite
 					All_Pieces(color) ^= castlingc<color>::QSCFT;
 					if (validPosition<color>(castlingc<color>::kingSqAfterQSC)){
 						castling &= castlingc<color>::deactrights;
-						Zobrist toggle = zobrist::keys[7+((color==black)?56:0)][ROOK | color];
-						toggle ^= zobrist::keys[4+((color==black)?56:0)][ROOK | color];
-						toggle ^= zobrist::keys[3+((color==black)?56:0)][KING | color];
-						toggle ^= zobrist::keys[5+((color==black)?56:0)][KING | color];
+						Zobrist toggle = zobrist::keys[ROOK | color][7+((color==black)?56:0)];
+						toggle ^= zobrist::keys[ROOK | color][4+((color==black)?56:0)];
+						toggle ^= zobrist::keys[KING | color][3+((color==black)?56:0)];
+						toggle ^= zobrist::keys[KING | color][5+((color==black)?56:0)];
 						toggle ^= ct;
 						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						Pieces[ROOK | color] ^= castlingc<color>::QSCRT;
@@ -1453,8 +1452,8 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][piecet[i]];
-						toggle ^= zobrist::keys[fromSq[i]][piecet[i]];
+						Zobrist toggle = zobrist::keys[piecet[i]][toSq];
+						toggle ^= zobrist::keys[piecet[i]][fromSq[i]];
 						All_Pieces(color) ^= tf;
 						Pieces[piecet[i]] ^= tf;
 						zobr ^= toggle;
@@ -1483,8 +1482,8 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][ROOK | color];
-						toggle ^= zobrist::keys[fromSq[i]][ROOK | color];
+						Zobrist toggle = zobrist::keys[ROOK | color][toSq];
+						toggle ^= zobrist::keys[ROOK | color][fromSq[i]];
 						All_Pieces(color) ^= tf;
 						Pieces[ROOK | color] ^= tf;
 						zobr ^= toggle;
@@ -1516,8 +1515,8 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | frombb[i];
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][QUEEN | color];
-						toggle ^= zobrist::keys[fromSq[i]][QUEEN | color];
+						Zobrist toggle = zobrist::keys[QUEEN | color][toSq];
+						toggle ^= zobrist::keys[QUEEN | color][fromSq[i]];
 						All_Pieces(color) ^= tf;
 						Pieces[QUEEN | color] ^= tf;
 						zobr ^= toggle;
@@ -1548,8 +1547,8 @@ go infinite
 					Pieces[KING | color] ^= tf;
 					All_Pieces(color) ^= tf;
 					if (validPosition<color>(nkSq)){
-						Zobrist toggle = zobrist::keys[nkSq][KING | color];
-						toggle ^= zobrist::keys[kingSq][KING | color];
+						Zobrist toggle = zobrist::keys[KING | color][nkSq];
+						toggle ^= zobrist::keys[KING | color][kingSq];
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
@@ -1598,8 +1597,8 @@ go infinite
 					tf = to | (to << 8);
 				}
 				unsigned long int toSq = square(to);
-				Zobrist toggle = zobrist::keys[toSq][PAWN | color];
-				toggle ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+				Zobrist toggle = zobrist::keys[PAWN | color][toSq];
+				toggle ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
 				All_Pieces(color) ^= tf;
 				Pieces[PAWN | color] ^= tf;
 				zobr ^= toggle;
@@ -1635,8 +1634,8 @@ go infinite
 				}
 				unsigned long int toSq  = square(to);
 				unsigned long int tmpSq = square(enPassant);
-				Zobrist toggle = zobrist::keys[toSq][PAWN | color];
-				toggle ^= zobrist::keys[toSq+((color==white)?-16:16)][PAWN | color];
+				Zobrist toggle = zobrist::keys[PAWN | color][toSq];
+				toggle ^= zobrist::keys[PAWN | color][toSq+((color==white)?-16:16)];
 				toggle ^= zobrist::enPassant[7&tmpSq];
 				All_Pieces(color) ^= tf;
 				Pieces[PAWN | color] ^= tf;
@@ -1666,7 +1665,7 @@ go infinite
 			unsigned long int toSq = square(checkedBy);
 			int attacker = QUEEN | (color ^ 1);
 			while ((Pieces[attacker] & checkedBy)==0) attacker -= 2;
-			zobr ^= zobrist::keys[toSq][attacker];
+			zobr ^= zobrist::keys[attacker][toSq];
 			Pieces[attacker] ^= checkedBy;
 			All_Pieces(color ^ 1) ^= checkedBy;
 			pieceScore -= Value::piece[attacker];
@@ -1678,15 +1677,15 @@ go infinite
 						bitboard tf = checkedBy | (att & -att); //FIXME lsb not needed, one bit guaranteed?
 						All_Pieces(color) ^= tf;
 						if (validPositionNonChecked<color>(kingSq)){
-							Zobrist toggle = zobrist::keys[toSq][PAWN | color];
-							toggle ^= zobrist::keys[toSq - diff][PAWN | color];
+							Zobrist toggle = zobrist::keys[PAWN | color][toSq];
+							toggle ^= zobrist::keys[PAWN | color][toSq - diff];
 							Pieces[PAWN | color] ^= tf;
 							zobr ^= toggle;
 							searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 							zobr ^= toggle;
 							Pieces[PAWN | color] ^= tf;
 							if( score >= beta ) {
-								zobr ^= zobrist::keys[toSq][attacker];
+								zobr ^= zobrist::keys[attacker][toSq];
 								Pieces[attacker] ^= checkedBy;
 								All_Pieces(color ^ 1) ^= checkedBy;
 								pieceScore += Value::piece[attacker];
@@ -1715,15 +1714,15 @@ go infinite
 							All_Pieces(color) ^= tf;
 							if (validPositionNonChecked<color>(kingSq)){
 								unsigned long int toenpsq = square(tmpEnPassant);
-								Zobrist toggle = zobrist::keys[toenpsq][PAWN | color];
-								toggle ^= zobrist::keys[toenpsq - diff][PAWN | color];
+								Zobrist toggle = zobrist::keys[PAWN | color][toenpsq];
+								toggle ^= zobrist::keys[PAWN | color][toenpsq - diff];
 								Pieces[PAWN | color] ^= tf;
 								zobr ^= toggle;
 								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 								zobr ^= toggle;
 								Pieces[PAWN | color] ^= tf;
 								if( score >= beta ) {
-									zobr ^= zobrist::keys[toSq][attacker];
+									zobr ^= zobrist::keys[attacker][toSq];
 									Pieces[attacker] ^= checkedBy;
 									All_Pieces(color ^ 1) ^= checkedBy;
 									pieceScore += Value::piece[attacker];
@@ -1755,18 +1754,18 @@ go infinite
 						if (validPositionNonChecked<color>(kingSq)){
 							Pieces[PAWN | color] ^= from;
 							pieceScore -= Value::piece[PAWN | color];
-							zobr ^= zobrist::keys[toSq - diff][PAWN | color];
+							zobr ^= zobrist::keys[PAWN | color][toSq - diff];
 							for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
 								Pieces[prom] ^= checkedBy;
 								pieceScore += Value::piece[prom];
-								zobr ^= zobrist::keys[toSq][prom];
+								zobr ^= zobrist::keys[prom][toSq];
 								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
-								zobr ^= zobrist::keys[toSq][prom];
+								zobr ^= zobrist::keys[prom][toSq];
 								pieceScore -= Value::piece[prom];
 								Pieces[prom] ^= checkedBy;
 								if( score >= beta ) {
-									zobr ^= zobrist::keys[toSq - diff][PAWN | color];
-									zobr ^= zobrist::keys[toSq][attacker];
+									zobr ^= zobrist::keys[PAWN | color][toSq - diff];
+									zobr ^= zobrist::keys[attacker][toSq];
 									Pieces[attacker] ^= checkedBy;
 									All_Pieces(color ^ 1) ^= checkedBy;
 									pieceScore += Value::piece[attacker];
@@ -1785,7 +1784,7 @@ go infinite
 									bestProm = prom;
 								}
 							}
-							zobr ^= zobrist::keys[toSq - diff][PAWN | color];
+							zobr ^= zobrist::keys[PAWN | color][toSq - diff];
 							pieceScore += Value::piece[PAWN | color];
 							Pieces[PAWN | color] ^= from;
 						}
@@ -1800,15 +1799,15 @@ go infinite
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
 					unsigned long int fromSq = square(from);
-					Zobrist toggle = zobrist::keys[fromSq][KNIGHT | color];
-					toggle ^= zobrist::keys[toSq][KNIGHT | color];
+					Zobrist toggle = zobrist::keys[KNIGHT | color][fromSq];
+					toggle ^= zobrist::keys[KNIGHT | color][toSq];
 					Pieces[KNIGHT | color] ^= tf;
 					zobr ^= toggle;
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[KNIGHT | color] ^= tf;
 					if( score >= beta ) {
-						zobr ^= zobrist::keys[toSq][attacker];
+						zobr ^= zobrist::keys[attacker][toSq];
 						Pieces[attacker] ^= checkedBy;
 						All_Pieces(color ^ 1) ^= checkedBy;
 						pieceScore += Value::piece[attacker];
@@ -1833,15 +1832,15 @@ go infinite
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
 					unsigned long int fromSq = square(from);
-					Zobrist toggle = zobrist::keys[fromSq][BISHOP | color];
-					toggle ^= zobrist::keys[toSq][BISHOP | color];
+					Zobrist toggle = zobrist::keys[BISHOP | color][fromSq];
+					toggle ^= zobrist::keys[BISHOP | color][toSq];
 					Pieces[BISHOP | color] ^= tf;
 					zobr ^= toggle;
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[BISHOP | color] ^= tf;
 					if( score >= beta ) {
-						zobr ^= zobrist::keys[toSq][attacker];
+						zobr ^= zobrist::keys[attacker][toSq];
 						Pieces[attacker] ^= checkedBy;
 						All_Pieces(color ^ 1) ^= checkedBy;
 						pieceScore += Value::piece[attacker];
@@ -1870,8 +1869,8 @@ go infinite
 				if (validPositionNonChecked<color>(kingSq)){
 					castling &= ~from;
 					unsigned long int fromSq = square(from);
-					Zobrist toggle = zobrist::keys[fromSq][ROOK | color];
-					toggle ^= zobrist::keys[toSq][ROOK | color];
+					Zobrist toggle = zobrist::keys[ROOK | color][fromSq];
+					toggle ^= zobrist::keys[ROOK | color][toSq];
 					toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 					Pieces[ROOK | color] ^= tf;
 					zobr ^= toggle;
@@ -1880,7 +1879,7 @@ go infinite
 					Pieces[ROOK | color] ^= tf;
 					castling = oldcastling;
 					if( score >= beta ) {
-						zobr ^= zobrist::keys[toSq][attacker];
+						zobr ^= zobrist::keys[attacker][toSq];
 						Pieces[attacker] ^= checkedBy;
 						All_Pieces(color ^ 1) ^= checkedBy;
 						pieceScore += Value::piece[attacker];
@@ -1907,15 +1906,15 @@ go infinite
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)){
 					unsigned long int fromSq = square(from);
-					Zobrist toggle = zobrist::keys[fromSq][QUEEN | color];
-					toggle ^= zobrist::keys[toSq][QUEEN | color];
+					Zobrist toggle = zobrist::keys[QUEEN | color][fromSq];
+					toggle ^= zobrist::keys[QUEEN | color][toSq];
 					Pieces[QUEEN | color] ^= tf;
 					zobr ^= toggle;
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[QUEEN | color] ^= tf;
 					if( score >= beta ) {
-						zobr ^= zobrist::keys[toSq][attacker];
+						zobr ^= zobrist::keys[attacker][toSq];
 						Pieces[attacker] ^= checkedBy;
 						All_Pieces(color ^ 1) ^= checkedBy;
 						pieceScore += Value::piece[attacker];
@@ -1934,7 +1933,7 @@ go infinite
 				All_Pieces(color) ^= tf;
 			}
 			pieceScore += Value::piece[attacker];
-			zobr ^= zobrist::keys[toSq][attacker];
+			zobr ^= zobrist::keys[attacker][toSq];
 			Pieces[attacker] ^= checkedBy;
 			All_Pieces(color ^ 1) ^= checkedBy;
 			//2) Block it if it is a ray piece
@@ -1997,9 +1996,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= cp;
 						if (validPositionNonChecked<color>(kingSq)){
-							Zobrist toggle = zobrist::keys[tmpSq2][PAWN | color];
-							toggle ^= zobrist::keys[tmpSq2-diff][PAWN | color];
-							toggle ^= zobrist::keys[tmpSq2+(color==white)?-8:8][PAWN | (color ^ 1)];
+							Zobrist toggle = zobrist::keys[PAWN | color][tmpSq2];
+							toggle ^= zobrist::keys[PAWN | color][tmpSq2-diff];
+							toggle ^= zobrist::keys[PAWN | (color ^ 1)][tmpSq2+(color==white)?-8:8];
 							zobr ^= toggle;
 							pieceScore -= Value::piece[PAWN | (color ^ 1)];
 							searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -2072,8 +2071,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				if (validPositionNonChecked<color>(kingSq)) {
 					toSq  = square(to);
 					tmpSq = square(enPassant);
-					Zobrist toggle = zobrist::keys[toSq][PAWN | color];
-					toggle ^= zobrist::keys[toSq+((color==white)?-16:16)][PAWN | color];
+					Zobrist toggle = zobrist::keys[PAWN | color][toSq];
+					toggle ^= zobrist::keys[PAWN | color][toSq+((color==white)?-16:16)];
 					toggle ^= zobrist::enPassant[7&tmpSq];
 					Pieces[PAWN | color] ^= tf;
 					zobr ^= toggle;
@@ -2110,19 +2109,19 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					toSq = square(to);
 					Pieces[PAWN | color] ^= from;
 					pieceScore -= Value::piece[PAWN | color];
-					zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+					zobr ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
 					for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
 						Pieces[prom] ^= to;
 						pieceScore += Value::piece[prom];
-						zobr ^= zobrist::keys[toSq][prom];
+						zobr ^= zobrist::keys[prom][toSq];
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
-						zobr ^= zobrist::keys[toSq][prom];
+						zobr ^= zobrist::keys[prom][toSq];
 						pieceScore -= Value::piece[prom];
 						Pieces[prom] ^= to;
 						if( score >= beta ) {
 							pieceScore += Value::piece[PAWN | color];
 							Pieces[PAWN | color] ^= from;
-							zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+							zobr ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
 							All_Pieces(color) ^= tf;
 
 							prepare_beta_cutoff<mode, color>(oldhm, tmpEnPassant, enSq, depth, getMove<color>(tf, prom), beta);
@@ -2135,7 +2134,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							bestProm = prom;
 						}
 					}
-					zobr ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+					zobr ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
 					pieceScore += Value::piece[PAWN | color];
 					Pieces[PAWN | color] ^= from;
 				}
@@ -2152,8 +2151,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				All_Pieces(color) ^= tf;
 				if (validPositionNonChecked<color>(kingSq)) {
 					toSq = square(to);
-					Zobrist toggle = zobrist::keys[toSq][PAWN | color];
-					toggle ^= zobrist::keys[toSq+((color==white)?-8:8)][PAWN | color];
+					Zobrist toggle = zobrist::keys[PAWN | color][toSq];
+					toggle ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
 					Pieces[PAWN | color] ^= tf;
 					zobr ^= toggle;
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -2186,8 +2185,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
 						toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][KNIGHT | color];
-						toggle ^= zobrist::keys[fromSq][KNIGHT | color];
+						Zobrist toggle = zobrist::keys[KNIGHT | color][toSq];
+						toggle ^= zobrist::keys[KNIGHT | color][fromSq];
 						Pieces[KNIGHT | color] ^= tf;
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -2219,8 +2218,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
 						toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][BISHOP | color];
-						toggle ^= zobrist::keys[fromSq][BISHOP | color];
+						Zobrist toggle = zobrist::keys[BISHOP | color][toSq];
+						toggle ^= zobrist::keys[BISHOP | color][fromSq];
 						Pieces[BISHOP | color] ^= tf;
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -2254,8 +2253,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
 						toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][ROOK | color];
-						toggle ^= zobrist::keys[fromSq][ROOK | color];
+						Zobrist toggle = zobrist::keys[ROOK | color][toSq];
+						toggle ^= zobrist::keys[ROOK | color][fromSq];
 						Pieces[ROOK | color] ^= tf;
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -2287,8 +2286,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					All_Pieces(color) ^= tf;
 					if (validPositionNonChecked<color>(kingSq)){
 						toSq = square(to);
-						Zobrist toggle = zobrist::keys[toSq][QUEEN | color];
-						toggle ^= zobrist::keys[fromSq][QUEEN | color];
+						Zobrist toggle = zobrist::keys[QUEEN | color][toSq];
+						toggle ^= zobrist::keys[QUEEN | color][fromSq];
 						Pieces[QUEEN | color] ^= tf;
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -2332,9 +2331,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				Pieces[KING | color] ^= tf;
 				All_Pieces(color) ^= tf;
 				if (validPosition<color>(kingSq)){
-					Zobrist toggle = zobrist::keys[fromSq][KING | color];
-					toggle ^= zobrist::keys[kingSq][KING | color];
-					toggle ^= zobrist::keys[kingSq][attacker];
+					Zobrist toggle = zobrist::keys[KING | color][fromSq];
+					toggle ^= zobrist::keys[KING | color][kingSq];
+					toggle ^= zobrist::keys[attacker][kingSq];
 					pieceScore -= Value::piece[attacker];
 					zobr ^= toggle;
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
@@ -2374,8 +2373,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			Pieces[KING | color] ^= tf;
 			All_Pieces(color) ^= tf;
 			if (validPosition<color>(kingSq)){
-				Zobrist toggle = zobrist::keys[kingSq][KING | color];
-				toggle ^= zobrist::keys[fromSq][KING | color];
+				Zobrist toggle = zobrist::keys[KING | color][kingSq];
+				toggle ^= zobrist::keys[KING | color][fromSq];
 				zobr ^= toggle;
 				searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 				zobr ^= toggle;

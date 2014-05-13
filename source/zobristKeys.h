@@ -12,7 +12,7 @@
 typedef chapeiro::zobrist key;
 
 namespace zobrist {
-	extern const key keys[64][12];
+	extern const key keys[12][64];
 	extern const key enPassant[8];
 	extern const key blackKey;
 	extern const key White_King_Castling, White_Queen_Castling;

@@ -41,15 +41,15 @@ void generateZobristKeys() {
 	vector<key> a;
 	a.push_back(0);
 	CRandomMersenne rdm(time(0));
-	fprintf(pd, "const key zobrist::keys[64][12] = {\n");
-	for (int i = 0; i < 64; i++) {
+	fprintf(pd, "const key zobrist::keys[12][64] = {\n");
+	for (int i = 0; i < 12; i++) {
 		fprintf(pd, "{");
-		for (int k = 0; k < 12; k++) {
+		for (int k = 0; k < 64; k++) {
 			fprintf(pd, formatBitboard, getRandomLong(a, rdm));
-			if (k != 11) fprintf(pd, ",");
+			if (k != 63) fprintf(pd, ",");
 		}
 		fprintf(pd, "}");
-		if (i != 63) fprintf(pd, ",");
+		if (i != 11) fprintf(pd, ",");
 		fprintf(pd, "\n");
 	}
 	fprintf(pd, "};\n\n");

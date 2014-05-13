@@ -544,9 +544,9 @@ U64 Board::perft(int depth){
 		for (int i = 0 ; i < 8 ; ++i){
 			if ( k == zobrist::enPassant[i]) std::cout << "enPassant[" << i << ']' << std::endl;
 		}
-		for (int i = 0 ; i < 64 ; ++i){
-			for (int j = 0 ; j < 12 ; ++j){
-				if ( k == zobrist::keys[i][j]) std::cout << "keys[" << i << "][" << j << ']' << std::endl;
+		for (int j = 0 ; j < 12 ; ++j){
+			for (int i = 0 ; i < 64 ; ++i){
+				if ( k == zobrist::keys[j][i]) std::cout << "keys[" << j << "][" << i << ']' << std::endl;
 			}
 		}
 	}
@@ -591,9 +591,9 @@ int Board::test(int depth){
 		for (int i = 0 ; i < 8 ; ++i){
 			if ( k == zobrist::enPassant[i]) std::cout << "enPassant[" << i << ']' << std::endl;
 		}
-		for (int i = 0 ; i < 64 ; ++i){
-			for (int j = 0 ; j < 12 ; ++j){
-				if ( k == zobrist::keys[i][j]) std::cout << "keys[" << i << "][" << j << ']' << std::endl;
+		for (int j = 0 ; j < 12 ; ++j){
+			for (int i = 0 ; i < 64 ; ++i){
+				if ( k == zobrist::keys[j][i]) std::cout << "keys[" << j << "][" << i << ']' << std::endl;
 			}
 		}
 	}

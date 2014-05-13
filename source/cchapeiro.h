@@ -10,6 +10,12 @@
 //fixme remove
 #define quiescenceMask (4)
 
+#ifndef CACHE_ALIGN
+#define CACHE_LINE  64
+#define CACHE_ALIGN __declspec(align(CACHE_LINE))
+#endif
+#define cache_align CACHE_ALIGN
+
 #include <string>
 
 #define version 1
