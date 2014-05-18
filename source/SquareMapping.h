@@ -31,9 +31,9 @@ inline int rank(const int &index){
 		return index;
 	}
 #else
-	inline void square(unsigned long int &index, bitboard bb){
-		index = __builtin_ctzll(bb);
-		//index = magictable[(b*magic) >> 58];
+	inline unsigned long int square(bitboard bb){
+		return __builtin_ctzll(bb);
+//		return magictable[(b*magic) >> 58];
 	}
 #endif
 
