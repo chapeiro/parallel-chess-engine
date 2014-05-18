@@ -12,7 +12,11 @@
 
 #ifndef CACHE_ALIGN
 #define CACHE_LINE  64
+#ifdef _MSC_VER
 #define CACHE_ALIGN __declspec(align(CACHE_LINE))
+#else
+#define CACHE_ALIGN __attribute__((align(CACHE_LINE)))
+#endif
 #endif
 #define cache_align CACHE_ALIGN
 
