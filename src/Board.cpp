@@ -5,12 +5,12 @@
  *      Author: Chrysogelos Periklis
  */
 
-#include "Board.h"
+#include "Board.hpp"
 #include <cstring>
 #include <string>
-#include "SquareMapping.h"
-#include "MoveEncoding.h"
-#include "Values.h"
+#include "SquareMapping.hpp"
+#include "MoveEncoding.hpp"
+#include "Values.hpp"
 #include <ctime>
 
 const int Value::piece[12] = {100,

@@ -3,8 +3,8 @@
  * Generated : 2011/12/17 00:03:16
  **/
 
-#include "Board.h"
-#include "MagicsAndPrecomputedData.h"
+#include "Board.hpp"
+#include "MagicsAndPrecomputedData.hpp"
 
 const bitboard magic = 0x0218a392cfd3576full; // the 41.
 

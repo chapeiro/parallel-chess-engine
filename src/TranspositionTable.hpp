@@ -7,10 +7,10 @@
 
 #ifndef TRANSPOSITIONTABLE_H_
 #define TRANSPOSITIONTABLE_H_
-#include "zobristKeys.h"
-#include "MoveEncoding.h"
+#include "zobristKeys.hpp"
+#include "MoveEncoding.hpp"
 #include <cassert>
-//#include "Board.h"
+//#include "Board.hpp"
 
 #define TRANSPOSITION_TABLE_SIZE (0x7fffff)
 #define clearDeeperKey 4

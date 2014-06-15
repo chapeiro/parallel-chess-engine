@@ -6,12 +6,12 @@
  */
 #include <iostream>
 #include <stdio.h>
-#include "randomc.h"
+#include "randomc.hpp"
 #include <stdlib.h>
 #include <ctime>
-#include "cchapeiro.h"
-#include "SquareMapping.h"
-#include "Board.h"
+#include "cchapeiro.hpp"
+#include "SquareMapping.hpp"
+#include "Board.hpp"
 //#define bf
 
 typedef chapeiro::bitboard bitboard;

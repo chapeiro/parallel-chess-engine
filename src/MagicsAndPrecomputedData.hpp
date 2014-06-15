@@ -7,7 +7,7 @@
 
 #ifndef MAGICSANDPRECOMPUTEDDATA_H_
 #define MAGICSANDPRECOMPUTEDDATA_H_
-#include "cchapeiro.h"
+#include "cchapeiro.hpp"
 
 typedef chapeiro::bitboard bitboard;
 

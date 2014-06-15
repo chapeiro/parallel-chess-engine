@@ -7,7 +7,7 @@
 
 #ifndef SQUAREMAPPING_H_
 #define SQUAREMAPPING_H_
-#include "MagicsAndPrecomputedData.h"
+#include "MagicsAndPrecomputedData.hpp"
 #include <assert.h>
 #include <iostream>
 

@@ -5,9 +5,9 @@
  *      Author: Chrysogelos Periklis
  */
 
-#include "testCChapeiro.h"
+#include "testCChapeiro.hpp"
 #include <stdio.h>
-#include "Board.h"
+#include "Board.hpp"
 #include <string>
 #include <ctime>
 #ifdef DIVIDEPERFT

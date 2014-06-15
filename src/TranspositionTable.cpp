@@ -5,7 +5,7 @@
  *      Author: Chrysogelos Periklis
  */
 
-#include "TranspositionTable.h"
+#include "TranspositionTable.hpp"
 #include <iostream>
 
 ttEntry transpositionTable[TRANSPOSITION_TABLE_SIZE];

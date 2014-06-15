@@ -7,7 +7,7 @@
 
 #ifndef ZOBRISTKEYS_H_
 #define ZOBRISTKEYS_H_
-#include "cchapeiro.h"
+#include "cchapeiro.hpp"
 
 typedef chapeiro::zobrist key;
 

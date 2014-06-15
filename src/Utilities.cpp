@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "cchapeiro.h"
+#include "cchapeiro.hpp"
 
 typedef chapeiro::bitboard U64;
 

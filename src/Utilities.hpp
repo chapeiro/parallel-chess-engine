@@ -7,7 +7,7 @@
 
 #ifndef UTILITIES_H_
 #define UTILITIES_H_
-#include "cchapeiro.h"
+#include "cchapeiro.hpp"
 
 #ifdef _MSC_VER
     #include <intrin.h>

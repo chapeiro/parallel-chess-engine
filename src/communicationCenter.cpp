@@ -4,13 +4,13 @@
  *  Created on: 18 ��� 2011
  *      Author: Chrysogelos Periklis
  */
-#include "Board.h"
+#include "Board.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
 #include <string>
-#include "testCChapeiro.h"
-#include "uciProtocol.h"
+#include "testCChapeiro.hpp"
+#include "uciProtocol.hpp"
 #include <cstdio>
 using namespace std;
 bool debugcc = false;

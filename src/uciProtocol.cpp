@@ -6,11 +6,11 @@
  */
 
 #include <iostream>
-#include "Board.h"
+#include "Board.hpp"
 #include <string>
 #include <stdlib.h>
-#include "uciProtocol.h"
-#include "TranspositionTable.h"
+#include "uciProtocol.hpp"
+#include "TranspositionTable.hpp"
 
 using namespace std;
 

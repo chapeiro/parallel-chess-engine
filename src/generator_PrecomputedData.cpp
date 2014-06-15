@@ -5,9 +5,9 @@
  *      Author: Chrysogelos Periklis
  */
 
-#include "cchapeiro.h"
-#include "SquareMapping.h"
-#include "MagicsAndPrecomputedData.h"
+#include "cchapeiro.hpp"
+#include "SquareMapping.hpp"
+#include "MagicsAndPrecomputedData.hpp"
 #include "Utilities.cpp"
 #include <stdio.h>
 #include <ctime>

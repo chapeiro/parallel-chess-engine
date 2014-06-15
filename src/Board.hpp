@@ -9,14 +9,14 @@
 
 #ifndef BOARD_H_
 #define BOARD_H_
-#include "Utilities.h"
-#include "cchapeiro.h"
-#include "zobristKeys.h"
-#include "MagicsAndPrecomputedData.h"
-#include "SquareMapping.h"
-#include "MoveEncoding.h"
+#include "Utilities.hpp"
+#include "cchapeiro.hpp"
+#include "zobristKeys.hpp"
+#include "MagicsAndPrecomputedData.hpp"
+#include "SquareMapping.hpp"
+#include "MoveEncoding.hpp"
 #include <string>
-#include "Values.h"
+#include "Values.hpp"
 //#define NDEBUG
 #include <assert.h>
 #include <exception>
@@ -30,7 +30,7 @@
 #include <chrono>
 #endif
 
-#include "TranspositionTable.h"
+#include "TranspositionTable.hpp"
 #include <iomanip>
 
 //#define NO_KILLER_MOVE
@@ -224,8 +224,8 @@ class Board {
 		void make(chapeiro::move m);
 
 		//for debug
-		std::string getFEN();
-		std::string getFEN(int playingl);
+		std::string getFEN() __restrict;
+		std::string getFEN(int playingl) __restrict;
 		void print();
 		void printHistory();
 		U64 perft(int depth);
@@ -239,88 +239,88 @@ class Board {
 		 * piece's index at Pieces array is returned.
 		 * Else <code>WRONG_PIECE</code> is returned.
 		 */
-		int getWhitePieceIndex(char p);
+		int getWhitePieceIndex(char p) __restrict;
 		/**
 		 * if p is a char representing a piece,
 		 * piece's index at Pieces array is returned.
 		 * else <code>WRONG_PIECE | white</code> or
 		 * <code>WRONG_PIECE | black</code> is returned.
 		 */
-		int getPieceIndex(char p);
+		int getPieceIndex(char p) __restrict;
 
-		void updatePieces(int sq, int ind);
-		void capture(int to);
+		void updatePieces(int sq, int ind) __restrict;
+		void capture(int to) __restrict;
 
-		void addToHistory(Zobrist position);
-		void removeLastHistoryEntry();
-		void forgetOldHistory();
-		template<int color> int getEvaluation(int depth);
-		int evaluatePawnStructure();
-		template<int color> void deactivateCastlingRights();
-		void togglePlaying();
-		void startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
+		void addToHistory(Zobrist position) __restrict;
+		void removeLastHistoryEntry() __restrict;
+		void forgetOldHistory() __restrict;
+		template<int color> int getEvaluation(int depth) __restrict;
+		int evaluatePawnStructure() __restrict;
+		template<int color> void deactivateCastlingRights() __restrict;
+		void togglePlaying() __restrict;
+		void startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch) __restrict;
 		std::string extractPV(int depth);
 
-		template<int color> bool validPosition(int kingSq);
-		template<int color> bool validPosition(bitboard occ, int kingSq);
-		template<int color> bool validPositionNonChecked(int kingSq);
-		template<int color> bool validPositionNonChecked(bitboard occ, int kingSq);
-		template<int color> bool notAttacked(bitboard target, int targetSq);
-		template<int color> bool notAttacked(bitboard target, bitboard occ, int targetSq);
-		template<int color> bitboard kingIsAttackedBy(bitboard occ, int kingSq);
+		template<int color> bool validPosition(int kingSq) __restrict;
+		template<int color> bool validPosition(bitboard occ, int kingSq) __restrict;
+		template<int color> bool validPositionNonChecked(int kingSq) __restrict;
+		template<int color> bool validPositionNonChecked(bitboard occ, int kingSq) __restrict;
+		template<int color> bool notAttacked(bitboard target, int targetSq) __restrict;
+		template<int color> bool notAttacked(bitboard target, bitboard occ, int targetSq) __restrict;
+		template<int color> bitboard kingIsAttackedBy(bitboard occ, int kingSq) __restrict;
 
-		template<int color> bool stalemate();
+		template<int color> bool stalemate() __restrict;
 
-		bitboard bishopAttacks(bitboard occ, const int &sq);
-		bitboard rookAttacks(bitboard occ, const int &sq);
-		bitboard queenAttacks(bitboard occ, const int &sq);
-		template<int color> bitboard getChecker(bitboard occ, unsigned long int sq, int kingSq);
-		template<int color> void filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq);
-		template<int color> bitboard getNPinnedPawns(bitboard occ, int kingSq);
-		template<int color> int getMove(bitboard tf, int prom);
-		char * moveToString(int move, char* m);
+		bitboard bishopAttacks(bitboard occ, const int &sq) __restrict;
+		bitboard rookAttacks(bitboard occ, const int &sq) __restrict;
+		bitboard queenAttacks(bitboard occ, const int &sq) __restrict;
+		template<int color> bitboard getChecker(bitboard occ, unsigned long int sq, int kingSq) __restrict;
+		template<int color> void filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq) __restrict;
+		template<int color> bitboard getNPinnedPawns(bitboard occ, int kingSq) __restrict;
+		template<int color> int getMove(bitboard tf, int prom) __restrict;
+		char * moveToString(int move, char* m) __restrict;
 
-		template<SearchMode mode, int color, bool root> int search(int alpha, int beta, int depth);
-		template<SearchMode mode, int color> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score);
-		template<int color> int quieSearch(int alpha, int beta);
+		template<SearchMode mode, int color, bool root> int search(int alpha, int beta, int depth) __restrict;
+		template<SearchMode mode, int color> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict;
+		template<int color> int quieSearch(int alpha, int beta) __restrict;
 
-		template<SearchMode mode, int color> void prepare_beta_cutoff(int oldhm, bitboard old_enpassant, int enSq, int move_entry, int depth, int beta);
+		template<SearchMode mode, int color> void prepare_beta_cutoff(int oldhm, bitboard old_enpassant, int enSq, int move_entry, int depth, int beta) __restrict;
 
-		bool threefoldRepetition();
+		bool threefoldRepetition() __restrict;
 };
 
-inline int Board::getPieceIndex(char p){
+inline int Board::getPieceIndex(char p) __restrict{
 	if (p > 'a') return getWhitePieceIndex(p-'a'+'A') | black;
 	return getWhitePieceIndex(p) | white;
 }
 
-inline void Board::updatePieces(int sq, int ind){
+inline void Board::updatePieces(int sq, int ind) __restrict{
 	Pieces[ind] ^= filled::normal[sq];
 	//if ( (ind & ~colormask) == KING ) kingSq[ind & colormask] = sq;
 	zobr ^= zobrist::keys[ind][sq];
 	All_Pieces(ind) ^= filled::normal[sq];
 }
 
-inline void Board::addToHistory(Zobrist position){
+inline void Board::addToHistory(Zobrist position) __restrict{
 	history[++lastHistoryEntry] = position;
 }
 
-inline void Board::removeLastHistoryEntry(){
+inline void Board::removeLastHistoryEntry() __restrict{
 	--lastHistoryEntry;
 }
 
-template<int color> inline void Board::deactivateCastlingRights(){
+template<int color> inline void Board::deactivateCastlingRights() __restrict{
 	bitboard oldc = castling;
 	castling &= castlingc<color>::deactrights;
 	zobr ^= zobrist::castling[((castling^oldc)*castlingsmagic)>>59];
 }
 
-inline void Board::togglePlaying(){
+inline void Board::togglePlaying() __restrict{
 	playing ^= 1;
 	zobr ^= zobrist::blackKey;
 }
 
-template<int color> bitboard Board::kingIsAttackedBy(bitboard occ, int kingSq){
+template<int color> bitboard Board::kingIsAttackedBy(bitboard occ, int kingSq) __restrict{
 	ASSUME(kingSq >= 0 && kingSq < 64);
 	bitboard attackers = KnightMoves[kingSq];
 	attackers &= Pieces[KNIGHT | (color^1)];
@@ -338,7 +338,7 @@ template<int color> bitboard Board::kingIsAttackedBy(bitboard occ, int kingSq){
  * uses only Pieces[ [PAWN ... KING] | color ], target, All_Pieces([white, black])
  * returns true if <code>target</code> is not attacked by <code>playing</code>
  */
-template<int color> inline bool Board::notAttacked(bitboard target, int targetSq){
+template<int color> inline bool Board::notAttacked(bitboard target, int targetSq) __restrict{
 	bitboard occ = All_Pieces(white) | All_Pieces(black);
 	return notAttacked<color>(target, occ, targetSq);
 }
@@ -347,7 +347,7 @@ template<int color> inline bool Board::notAttacked(bitboard target, int targetSq
  * uses only Pieces[ [PAWN ... KING] | color ], target, occ
  * returns true if <code>target</code> is not attacked by <code>playing</code>
  */
-template<int color> inline bool Board::notAttacked(bitboard target, bitboard occ, int targetSq){
+template<int color> inline bool Board::notAttacked(bitboard target, bitboard occ, int targetSq) __restrict{
 	ASSUME((target & (target-1))==0);
 	ASSUME(targetSq >= 0 && targetSq < 64);
 	if (color == black){
@@ -365,12 +365,12 @@ template<int color> inline bool Board::notAttacked(bitboard target, bitboard occ
 	return ((att & rookAttacks(occ, targetSq)) == 0ull);
 }
 
-template<int color> inline bool Board::validPosition(bitboard occ, int kingSq) {
+template<int color> inline bool Board::validPosition(bitboard occ, int kingSq) __restrict{
 	ASSUME((Pieces[KING | color] & (Pieces[KING | color]-1)) == 0);
 	return notAttacked<color^1>(Pieces[KING | color], occ, kingSq);
 }
 
-template<int color> inline bool Board::validPositionNonChecked(bitboard occ, int kingSq) {
+template<int color> inline bool Board::validPositionNonChecked(bitboard occ, int kingSq) __restrict{
 	return (((Pieces[BISHOP | ( color ^ 1 )] | Pieces[QUEEN | ( color ^ 1 )]) & bishopAttacks(occ, kingSq)) == 0) &&
 			(((Pieces[ROOK | ( color ^ 1 )] | Pieces[QUEEN | ( color ^ 1 )]) & rookAttacks(occ, kingSq)) == 0);
 	/**bitboard att = Pieces[BISHOP | ( color ^ 1 )] | Pieces[QUEEN | ( color ^ 1 )];
@@ -380,7 +380,7 @@ template<int color> inline bool Board::validPositionNonChecked(bitboard occ, int
 	return true;**/
 }
 
-template<int color> inline bool Board::validPositionNonChecked(int kingSq) {
+template<int color> inline bool Board::validPositionNonChecked(int kingSq) __restrict{
 	return validPositionNonChecked<color>(All_Pieces(white) | All_Pieces(black), kingSq);
 }
 
@@ -392,7 +392,7 @@ template<int color> inline bool Board::validPositionNonChecked(int kingSq) {
  * 	All_Pieces(white),
  * 	All_Pieces(black)
  */
-template<int color> inline bool Board::validPosition(int kingSq) {
+template<int color> inline bool Board::validPosition(int kingSq) __restrict{
 	ASSUME((Pieces[KING | color] & (Pieces[KING | color]-1)) == bitboard(0));
 	return notAttacked<color^1>(Pieces[KING | color], kingSq);
 }
@@ -461,7 +461,7 @@ template<SearchMode mode, int color, bool root> int Board::search(int alpha, int
 		//count horizon nodes reached (Useful for Perft)
 		++horizonNodes;
 		if (mode & Perft) {
-			if (dividedepth == 0) std::cout << pre << getFEN(color) << '\n';
+			// if (dividedepth == 0) std::cout << pre << getFEN(color) << '\n';
 			return beta;
 		}
 		//Horizon has been reached! Start quiescence search
@@ -521,7 +521,6 @@ go infinite
 #ifndef NO_KILLER_MOVE
 	if (mode != Perft){
 		if (killerMove != NULL_MOVE){
-			bitboard tmp = occ;
 			int killerFromSq = getTTMove_From(killerMove);
 			int killerToSq = getTTMove_To(killerMove);
 			bitboard killerFrom = bitboard(1) << killerFromSq;
@@ -930,7 +929,7 @@ go infinite
 				unsigned long int toSq = square(tmpEnPassant);
 				Zobrist toggle = zobrist::keys[PAWN | color][toSq];
 				toggle ^= zobrist::keys[PAWN | color][toSq-diff];
-				toggle ^= zobrist::keys[PAWN | (color ^ 1)][toSq+(color==white)?-8:8];
+				toggle ^= zobrist::keys[PAWN | (color ^ 1)][(toSq+(color==white))?-8:8];
 				pieceScore -= Value::piece[PAWN | (color ^ 1)];
 				Pieces[PAWN | color] ^= tf;
 				Pieces[PAWN | (color^1)] ^= cp;
@@ -1021,7 +1020,7 @@ go infinite
 #undef SIZE
 		bitboard KAttack = KingMoves[kingSq];
 		unsigned long int firstRook, firstQueen;
-		TargetSquareGenerator:{
+		{ 												//TargetSquareGenerator:
 			int dr;
 			bitboard tmp = Pieces[KNIGHT | color];
 			//TODO Only knights that are not pinned can move, so tmp's population is predictable from here
@@ -2436,7 +2435,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			dividedepth = depth;
 		}
 #else
-		std::cout << pre << getFEN(color) << '\t' << moves << std::endl;
+		// std::cout << pre << getFEN(color) << '\t' << moves << std::endl;
 #endif
 	}
 	if (mode == Perft) return alpha + 1;
@@ -2463,7 +2462,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 	return alpha;
 }
 
-template<int color> inline int Board::getMove(bitboard tf, int prom){
+template<int color> inline int Board::getMove(bitboard tf, int prom) __restrict{
 	ASSUME(tf != bitboard(0));
 	ASSUME(prom < (TTMove_EnPassantPromFlag << 1));
 	ASSUME((tf & All_Pieces(color)) != bitboard(0));
@@ -2479,7 +2478,7 @@ template<int color> inline int Board::getMove(bitboard tf, int prom){
 	return getTTMoveFormat(fromSq, toSq, 0);
 }
 
-template<int color> bool Board::stalemate(){
+template<int color> bool Board::stalemate() __restrict{
 	bitboard occ = All_Pieces(white);
 	occ |= All_Pieces(black);
 	bitboard empty = ~occ;
@@ -2663,7 +2662,7 @@ template<int color> bool Board::stalemate(){
 	return true;
 }
 
-template<int color> int Board::getEvaluation(int depth){
+template<int color> int Board::getEvaluation(int depth) __restrict{
 	/**
 	 * FIXME
 	 * 8/8/8/8/6k1/R5p1/P1r3P1/5K2 b - - 21 71
@@ -2699,7 +2698,7 @@ template<int color> int Board::getEvaluation(int depth){
 	return score;
 }
 
-inline bitboard Board::bishopAttacks(bitboard occ, const int &sq){
+inline bitboard Board::bishopAttacks(bitboard occ, const int &sq) __restrict{
 	occ &= BishopMask[sq];
 	occ *= BishopMagic[sq];
 #ifndef fixedShift
@@ -2710,7 +2709,7 @@ inline bitboard Board::bishopAttacks(bitboard occ, const int &sq){
 	return BishopAttacks[sq][occ];
 }
 
-inline bitboard Board::rookAttacks(bitboard occ, const int &sq){
+inline bitboard Board::rookAttacks(bitboard occ, const int &sq) __restrict{
 	occ &= RookMask[sq];
 	occ *= RookMagic[sq];
 #ifndef fixedShift
@@ -2721,11 +2720,11 @@ inline bitboard Board::rookAttacks(bitboard occ, const int &sq){
 	return RookAttacks[sq][occ];
 }
 
-inline bitboard Board::queenAttacks(bitboard occ, const int &sq){
+inline bitboard Board::queenAttacks(bitboard occ, const int &sq) __restrict{
 	return rookAttacks(occ, sq) | bishopAttacks(occ, sq);
 }
 
-template<int color> inline void Board::filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq){
+template<int color> inline void Board::filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq) __restrict{
 	int dr = direction[kingSq][sq];
 	bitboard ray = rays[kingSq][sq];
 	if (dr != WRONG_PIECE && (ray & occ) == bitboard(0)){
@@ -2739,7 +2738,7 @@ template<int color> inline void Board::filterAttackBB(bitboard occ, unsigned lon
 	}
 }
 
-template<int color> inline bitboard Board::getNPinnedPawns(bitboard occ, int kingSq){
+template<int color> inline bitboard Board::getNPinnedPawns(bitboard occ, int kingSq) __restrict{
 	bitboard pinnedPawns = bitboard(0);
 	bitboard tmp = rookAttacks(occ & ~rookAttacks(occ, kingSq), kingSq);
 	tmp &= Pieces[ROOK | (color ^ 1)] | Pieces[QUEEN | (color ^ 1)];
@@ -2751,20 +2750,20 @@ template<int color> inline bitboard Board::getNPinnedPawns(bitboard occ, int kin
 	return (~pinnedPawns);
 }
 
-template<int color> inline bitboard Board::getChecker(bitboard occ, unsigned long int sq, int kingSq){
+template<int color> inline bitboard Board::getChecker(bitboard occ, unsigned long int sq, int kingSq) __restrict{
 	occ &= XRayOFCMask[kingSq][sq];
 	occ *= XRayOFCMagic[kingSq][sq];
 	occ >>= 64 - maxCheckAvoidanceShiftBits;
 	return XRayOFCChecker[kingSq][sq][occ];
 }
 
-inline bool Board::threefoldRepetition(){
+inline bool Board::threefoldRepetition() __restrict{
 	int h = (halfmoves >= lastHistoryEntry) ? (lastHistoryEntry & 1) : (lastHistoryEntry - (halfmoves & (~1)));
 	for ( ; h < lastHistoryEntry ; h += 2) if (history[h] == zobr) return true;
 	return false;
 }
 
-inline int Board::evaluatePawnStructure(){
+inline int Board::evaluatePawnStructure() __restrict{
 	bitboard pawns = Pieces[PAWN | white];
 //	bitboard emptyFiles = pawns;
 	int pscore = 0;

@@ -5,7 +5,7 @@
  *      Author: Chrysogelos Periklis
  */
 
-#include "MoveEncoding.h"
+#include "MoveEncoding.hpp"
 
 chapeiro::move getNullMove(){
 	chapeiro::move n;

@@ -4,13 +4,13 @@
  *  Created on: 20 Ιουν 2011
  *      Author: User
  */
-#include "zobristKeys.h"
+#include "zobristKeys.hpp"
 #include <vector>
 #include <time.h>
 #include <algorithm>
 #include <stdio.h>
-#include "randomc.h"
-#include "cchapeiro.h"
+#include "randomc.hpp"
+#include "cchapeiro.hpp"
 using namespace std;
 
 key getRandomLong(vector<key> & a, CRandomMersenne & rdm){
