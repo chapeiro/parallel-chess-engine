@@ -1,0 +1,19 @@
+# GitEye Files
+.cproject
+.project
+
+# Object Files
+*.o
+
+# Sublime files
+*.sublime-project
+*.sublime-workspace
+
+# Non-Archive Executables
+bin
+
+# Eclipse files
+.settings
+
+# Dependency Files
+.depend

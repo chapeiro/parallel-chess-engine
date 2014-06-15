@@ -2,14 +2,18 @@
 # PROFILE=1
 
 DEBUGFLAGS= -g3 -pg 
+DEBUGFLAGS+= -funsafe-loop-optimizations
+DEBUGFLAGS+= -Wunsafe-loop-optimizations
+
 TFLAGS= -O3
 TFLAGS+= -finline 
 TFLAGS+= -march=native
 TFLAGS+= -fmerge-all-constants
 TFLAGS+= -fmodulo-sched
 TFLAGS+= -fmodulo-sched-allow-regmoves
-#TFLAGS+= -funsafe-loop-optimizations
-#TFLAGS+= -Wunsafe-loop-optimizations
+#mstackrealign
+TFLAGS+= -funsafe-loop-optimizations
+TFLAGS+= -Wunsafe-loop-optimizations
 TFLAGS+= -fsched-pressure
 TFLAGS+= -fipa-pta
 TFLAGS+= -fipa-matrix-reorg
@@ -19,7 +23,7 @@ TFLAGS+= -funroll-loops
 TFLAGS+= -fwhole-program
 TFLAGS+= -flto
 
-DEBUGFLAGS+=$(TFLAGS)
+# DEBUGFLAGS+=$(TFLAGS)
 OPTFLAGS= $(TFLAGS)
 OPTFLAGS+= -DNDEBUG
 
@@ -55,57 +59,133 @@ CXXFLAGS+= $(INCLUDE_PATH)
 # C_OBJECTS=$(C_SOURCES:.c=.o) $(CPP_SOURCES:.cpp=.o)
 
 #SRC_DIR=src
-SRC_DIR=source
-OBJ_DIR=obj
-DST_DIR=build
-BLD_DIR:=$(DST_DIR)
+# SRC_DIR=source
+# OBJ_DIR=obj
+# DST_DIR=build
+# BLD_DIR:=$(DST_DIR)
 # DBG_DIR=$(BLD_DIR)/debug
 # DOJ_DIR=$(OBJ_DIR)/debug
 
-DBG_SUB=debug
-DEF_SUB=release
-
-ifeq ($(DEBUG),1)
-	CXXFLAGS+= $(DEBUGFLAGS) $(PROFFLAGS)
-	BLD_DIR:=$(BLD_DIR)/$(DBG_SUB)
-	OBJ_DIR:=$(OBJ_DIR)/$(DBG_SUB)
-else
-	CXXFLAGS+= $(OPTFLAGS) $(PROFFLAGS)
-	BLD_DIR:=$(BLD_DIR)/$(DEF_SUB)
-	OBJ_DIR:=$(OBJ_DIR)/$(DEF_SUB)
-endif
-
-vpath %.cpp $(SRC_DIR)
-vpath %.o $(OBJ_DIR)
-
-CXX_SOURCES= $(notdir $(wildcard $(SRC_DIR)/*.cpp))
-CXX_OBJCTES= $(CXX_SOURCES:.cpp=.o)
-CXX_OBJCTESD= $(addprefix $(OBJ_DIR)/, $(CXX_OBJCTES))
-CXX_SOURCESD= $(wildcard $(SRC_DIR)/*.cpp)
-
-.PHONY: all
-
-#$(CXX) -c $(CPPFLAGS) $(CXXFLAGS)
-all: cchapeiro
+# DBG_SUB=debug
+# DEF_SUB=release
 
 
-$(OBJ_DIR)/%.o: %.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+# vpath %.cpp $(SRC_DIR)
+# vpath %.o $(OBJ_DIR)
 
-cchapeiro: $(CXX_OBJCTESD)
-	$(CXX) $^ $(CPPFLAGS) $(CXXFLAGS) -o $(BLD_DIR)/$@
-	chmod +x $(BLD_DIR)/$@
+# CXX_SOURCES= $(notdir $(wildcard $(SRC_DIR)/*.cpp))
+# CXX_OBJCTES= $(CXX_SOURCES:.cpp=.o)
+# CXX_OBJCTESD= $(addprefix $(OBJ_DIR)/, $(CXX_OBJCTES))
+# CXX_SOURCESD= $(wildcard $(SRC_DIR)/*.cpp)
 
-realclean:
-	$(RM) .depend $(CXX_OBJCTESD)
-	$(RM) -r $(OBJ_DIR) $(BLD_DIR)
-	touch .depend
-	-mkdir -p $(OBJ_DIR) $(BLD_DIR) $(DST_DIR)/$(DBG_SUB) $(DST_DIR)/$(DEF_SUB)
+# .PHONY: all
 
-depend: $(CPP_SOURCES)
-	$(CXX) $(CXXFLAGS) -MM $(CXX_SOURCESD) > .depend
+# #$(CXX) -c $(CPPFLAGS) $(CXXFLAGS)
+# all: cchapeiro
 
-clean: realclean depend
 
--include .depend
+# $(OBJ_DIR)/%.o: %.cpp
+# 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+
+# cchapeiro: $(CXX_OBJCTESD)
+# 	$(CXX) $^ $(CPPFLAGS) $(CXXFLAGS) -o $(BLD_DIR)/$@
+# 	chmod +x $(BLD_DIR)/$@
+
+# realclean:
+# 	$(RM) .depend $(CXX_OBJCTESD)
+# 	$(RM) -r $(OBJ_DIR) $(BLD_DIR)
+# 	touch .depend
+# 	-mkdir -p $(OBJ_DIR) $(BLD_DIR) $(DST_DIR)/$(DBG_SUB) $(DST_DIR)/$(DEF_SUB)
+
+# depend: $(CPP_SOURCES)
+# 	$(CXX) $(CXXFLAGS) -MM $(CXX_SOURCESD) > .depend
+
+# clean: realclean depend
+
+# -include .depend
+
+DBG_DIR=debug
+RLS_DIR=release
+
+BIN_ROOT=bin
+OBJ_ROOT=obj
+SRC_ROOT=src
+DEP_ROOT=.depend
+
+BIN_DBG=$(BIN_ROOT)/$(DBG_DIR)/
+BIN_RLS=$(BIN_ROOT)/$(RLS_DIR)/
+
+OBJ_DBG=$(OBJ_ROOT)/$(DBG_DIR)/
+OBJ_RLS=$(OBJ_ROOT)/$(RLS_DIR)/
+
+DEP_DBG=$(DEP_ROOT)/$(DBG_DIR)/
+DEP_RLS=$(DEP_ROOT)/$(RLS_DIR)/
+
+SED_ODD=$(subst /,\/,$(OBJ_DBG))
+SED_ORD=$(subst /,\/,$(OBJ_RLS))
+
+SED_DDD=$(subst /,\/,$(DEP_DBG))
+SED_DRD=$(subst /,\/,$(DEP_RLS))
+
+CXX_SOURCESD= $(wildcard $(SRC_ROOT)/*.cpp)
+CXX_SOURCES= $(subst $(SRC_ROOT)/,,$(CXX_SOURCESD))
+CXX_OBJECTS= $(CXX_SOURCES:.cpp=.o)
+# CXX_OBJCTESD= $(addprefix $(OBJ_DIR)/, $(CXX_OBJCTES))
+
+
+OBJ_FILES:=$(addprefix $(OBJ_DBG), $(CXX_OBJECTS)) $(addprefix $(OBJ_RLS), $(CXX_OBJECTS))
+
+debug:CXXFLAGS+= $(DEBUGFLAGS) $(PROFFLAGS)
+release:CXXFLAGS+= $(OPTFLAGS) $(PROFFLAGS)
+
+all: debug release
+
+release:BIN_DIR:= $(BIN_RLS)
+release:IMP_DIR:= $(RLS_DIR)
+release:OBJ_DIR:= $(OBJ_RLS)
+release:CXX_OBJ_D:= $(addprefix $(OBJ_RLS), $(CXX_OBJECTS))
+
+debug:BIN_DIR:= $(BIN_DBG)
+debug:IMP_DIR:= $(DBG_DIR)
+debug:OBJ_DIR:= $(OBJ_DBG)
+debug:CXX_OBJ_D:= $(addprefix $(OBJ_DBG), $(CXX_OBJECTS))
+
+-include $(addprefix $(DEP_DBG), $(CXX_SOURCES:.cpp=.d))
+-include $(addprefix $(DEP_RLS), $(CXX_SOURCES:.cpp=.d))
+
+$(BIN_RLS)cchapeiro:$(addprefix $(OBJ_RLS), $(CXX_OBJECTS))
+$(BIN_DBG)cchapeiro:$(addprefix $(OBJ_DBG), $(CXX_OBJECTS))
+
+release: $(BIN_RLS)cchapeiro
+release: 
+	echo $(addprefix $(OBJ_RLS), $(CXX_OBJECTS))
+debug:   $(BIN_DBG)cchapeiro
+
+.PHONY: all debug release
+
+space= 
+#do no remove this lines!!! needed!!!
+space+= 
+
+vpath %.o $(subst $(space),:,$(dir $(OBJ_FILES)))
+vpath %.cpp $(subst $(space),:,$(dir $(CXX_SOURCESD)))
+
+%.o: 
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(subst $(OBJ_DIR),$(SRC_ROOT)/,$(@:.o=.cpp)) -o $@
+
+%cchapeiro:
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $^
+
+clean:
+	-rm -r $(OBJ_ROOT) $(BIN_ROOT) $(DEP_ROOT)
+	mkdir -p $(BIN_DBG) $(BIN_RLS) $(OBJ_DBG) $(OBJ_RLS) $(DEP_DBG) $(DEP_RLS)
+	mkdir -p $(subst //,/,$(dir $(OBJ_FILES)))
+
+$(DEP_DBG)%.d: %.cpp Makefile
+	@mkdir -p $(@D)
+	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_SDD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DDD)$(subst /,\/,$(<:.cpp=.d)): Makefile\\\n/g' > $@
+
+$(DEP_RLS)%.d: %.cpp Makefile
+	@mkdir -p $(@D)
+	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ORD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DRD)$(subst /,\/,$(<:.cpp=.d)): Makefile\\\n/g' > $@
 
