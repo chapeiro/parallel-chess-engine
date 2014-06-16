@@ -5,8 +5,8 @@
  *      Author: Chrysogelos Periklis
  */
 
-#ifndef CCHAPEIRO_H_
-#define CCHAPEIRO_H_
+#ifndef CCHAPEIRO_HPP_
+#define CCHAPEIRO_HPP_
 //fixme remove
 #define quiescenceMask (4)
 
@@ -69,4 +69,4 @@ typedef unsigned long long int U64;
 #define formatBitboard "%#018llXull"
 #endif
 
-#endif /* CCHAPEIRO_H_ */
+#endif /* CCHAPEIRO_HPP_ */

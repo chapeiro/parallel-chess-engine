@@ -5,8 +5,8 @@
  *      Author: Chrysogelos Periklis
  */
 
-#ifndef MOVEENCODING_H_
-#define MOVEENCODING_H_
+#ifndef MOVEENCODING_HPP_
+#define MOVEENCODING_HPP_
 class Mask {
 public :
 	static const int from = 63;
@@ -62,4 +62,4 @@ namespace chapeiro {
 #define getTTMove_Prom_spec(move) (((move) >> 12) & 0x1F)
 #define getTTMove_fromPS_P(ps) (ps & 0xF)
 
-#endif /* MOVEENCODING_H_ */
+#endif /* MOVEENCODING_HPP_ */

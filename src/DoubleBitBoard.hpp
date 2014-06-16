@@ -5,8 +5,8 @@
  *      Author: Periklis
  */
 
-#ifndef DOUBLEBITBOARD_H_
-#define DOUBLEBITBOARD_H_
+#ifndef DOUBLEBITBOARD_HPP_
+#define DOUBLEBITBOARD_HPP_
 
 class DBitBoard{
 	union {
@@ -58,4 +58,4 @@ class DBitBoard{
 
 };
 
-#endif /* DOUBLEBITBOARD_H_ */
+#endif /* DOUBLEBITBOARD_HPP_ */

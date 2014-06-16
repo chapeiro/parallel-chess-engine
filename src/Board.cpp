@@ -196,7 +196,7 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 	addToHistory(zobr);
 }
 
-int Board::getWhitePieceIndex(char p){
+int Board::getWhitePieceIndex(char p) __restrict{
 	const char PiecesNameSort[] = {'P', 'N', 'B', 'R', 'Q', 'K'};
 	for (int i = 0 ; i < (LASTPIECE >> 1) ; ++i){
 		if (PiecesNameSort[i] == p) return (i << 1) | white;
@@ -204,7 +204,7 @@ int Board::getWhitePieceIndex(char p){
 	return WRONG_PIECE;
 }
 
-void Board::capture(int to){
+void Board::capture(int to) __restrict{
 	for (int i = playing^1 ; i < PIECESMAX ; i+=2){
 		if ((Pieces[i] & filled::normal[to])!=0){
 			pieceScore -= Value::piece[i];
@@ -347,13 +347,13 @@ void Board::make(chapeiro::move m){
  * Use with caution, slow method
  *	Only for use in debugging.
  **/
-std::string Board::getFEN(){ return getFEN(playing); }
+std::string Board::getFEN() __restrict{ return getFEN(playing); }
 
 /**
  * Use with caution, slow method
  *	Only for use in debugging.
  **/
-std::string Board::getFEN(int playingl){
+std::string Board::getFEN(int playingl) __restrict{
 	//A FEN record contains six fields.
 	//The separator between fields is a space.
 	//	The fields are:
@@ -518,6 +518,7 @@ void Board::printHistory(){
 }
 
 U64 Board::perft(int depth){
+	interruption_requested = false;
 	horizonNodes = 0;
 	qNodes = 0;
 	nodes = 0;
@@ -708,7 +709,7 @@ std::string Board::extractPV(int depth){
 	return pv;
 }
 
-char * Board::moveToString(int move, char* m){
+char * Board::moveToString(int move, char* m) const __restrict{
 	int fromSq = getTTMove_From(move);
 	int toSq = getTTMove_To(move);
 	int prom = getTTMove_Prom_spec(move);
@@ -726,7 +727,7 @@ char * Board::moveToString(int move, char* m){
 	return m;
 }
 
-void Board::forgetOldHistory(){
+void Board::forgetOldHistory() __restrict{
 	if (lastHistoryEntry < 50 || halfmoves >= lastHistoryEntry || halfmoves == 0) return;
 	int offset = lastHistoryEntry - halfmoves;
 	for (int i = 0 ; i <= halfmoves ; ++i) history[i] = history[i+offset];

@@ -407,20 +407,22 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 	time_t rawtime;
 	time(&rawtime);
 	strftime (ct, 20, "%Y/%m/%d %H:%M:%S", localtime(&rawtime));
-	fprintf(out, "/**   Auto-generated file.\n");
+	fprintf(out, "/** \n");
+	fprintf(out, " * Auto-generated file.\n");
 	fprintf(out, " * Contains pre-computed data for CChapeiro.\n");
 	fprintf(out, " * Generated : %s\n", ct);
 	fprintf(out, " **/\n\n");
-	fprintf(out, "#include \"cchapeiro.h\"\n");
-	fprintf(out, "#include \"MagicsAndPrecomputedData.h\"\n\n");
+	fprintf(out, "#ifndef PRECOMPD_MAGICS_HPP_\n");
+	fprintf(out, "#define PRECOMPD_MAGICS_HPP_\n\n");
+	fprintf(out, "#include \"cchapeiro.hpp\"\n");
 	fprintf(out, "typedef chapeiro::bitboard bitboard;\n\n");
-	fprintf(out, "const bitboard RookMagic[64] = {\n");
+	fprintf(out, "cache_align constexpr bitboard RookMagic[64] = {\n");
 	generate(RookBits, true, maxBitsRook, RookMagicCalc, out);
 	fprintf(out, "};\n\n");
-	fprintf(out, "const bitboard BishopMagic[64] = {\n");
+	fprintf(out, "cache_align constexpr bitboard BishopMagic[64] = {\n");
 	generate(BishopBits, false, maxBitsBishop, BishopMagicCalc, out);
 	fprintf(out, "};\n\n");
-	fprintf(out, "const bitboard RookMask[64] = {");
+	fprintf(out, "cache_align constexpr bitboard RookMask[64] = {");
 	for (int i = 0; i < 64 ; ++i) {
 		if (i%8==0) {
 			fprintf(out, "\n\t");
@@ -431,7 +433,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 		if (i != 63) fprintf(out, ",");
 	}
 	fprintf(out, "\n};\n\n");
-	fprintf(out, "const bitboard BishopMask[64] = {");
+	fprintf(out, "cache_align constexpr bitboard BishopMask[64] = {");
 	for (int i = 0; i < 64 ; ++i) {
 		if (i%8==0) {
 			fprintf(out, "\n\t");
@@ -443,7 +445,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 	}
 	fprintf(out, "\n};\n\n");
 #ifndef fixedShift
-	fprintf(out, "const int RookShift[64] = {");
+	fprintf(out, "cache_align constexpr int RookShift[64] = {");
 	for (int i = 0; i < 64 ; ++i) {
 		if (i%8==0) {
 			fprintf(out, "\n\t");
@@ -454,7 +456,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 		if (i != 63) fprintf(out, ",");
 	}
 	fprintf(out, "\n};\n\n");
-	fprintf(out, "const int BishopShift[64] = {");
+	fprintf(out, "cache_align constexpr int BishopShift[64] = {");
 	for (int i = 0; i < 64 ; ++i) {
 		if (i%8==0) {
 			fprintf(out, "\n\t");
@@ -466,7 +468,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 	}
 	fprintf(out, "\n};\n\n");
 #endif
-	fprintf(out, "const bitboard RookAttacks[64][4096] = {\n#define _____________________ 0ULL\n");
+	fprintf(out, "cache_align constexpr bitboard RookAttacks[64][4096] = {\n#define _____________________ 0ULL\n");
 	bitboard used[4096];
 	for (int sq = 0 ; sq < 64 ; ++sq){
 		for (int i = 0; i < 4096; ++i) used[i] = 0ULL;
@@ -503,7 +505,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 		fprintf(out, "\n");
 	}
 	fprintf(out, "#undef _____________________\n};\n\n");
-	fprintf(out, "const bitboard BishopAttacks[64][512] = {\n#define _____________________ 0ULL\n");
+	fprintf(out, "cache_align constexpr bitboard BishopAttacks[64][512] = {\n#define _____________________ 0ULL\n");
 	for (int sq = 0 ; sq < 64 ; ++sq){
 		for (int i = 0; i < 512; ++i) used[i] = 0ULL;
 		bitboard piece = 1ULL << sq;
@@ -628,7 +630,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 			}
 		}
 	}
-	fprintf(out, "const int direction[64][64] = {\n");
+	fprintf(out, "cache_align constexpr int direction[64][64] = {\n");
 	for (int sq = 0 ; sq < 64 ; ++sq){
 		fprintf(out, "{");
 		for (int i = 0 ; i < 64 ; ++i){
@@ -645,7 +647,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 		fprintf(out, "\n");
 	}
 	fprintf(out, "};\n\n");
-	fprintf(out, "const bitboard XRayOFCMask[64][64] = {\n#define _____________________ 0ULL\n");
+	fprintf(out, "cache_align constexpr bitboard XRayOFCMask[64][64] = {\n#define _____________________ 0ULL\n");
 	for (int sq = 0 ; sq < 64 ; ++sq){
 		fprintf(out, "{");
 		for (int i = 0 ; i < 64 ; ++i){
@@ -666,7 +668,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 		fprintf(out, "\n");
 	}
 	fprintf(out, "#undef _____________________\n};\n\n");
-	fprintf(out, "const bitboard XRayOFCMagic[64][64] = {\n#define _____________________ 0ULL\n");
+	fprintf(out, "cache_align constexpr bitboard XRayOFCMagic[64][64] = {\n#define _____________________ 0ULL\n");
 	for (int sq = 0 ; sq < 64 ; ++sq){
 		fprintf(out, "{");
 		for (int i = 0 ; i < 64 ; ++i){
@@ -687,7 +689,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 		fprintf(out, "\n");
 	}
 	fprintf(out, "#undef _____________________\n};\n\n");
-	fprintf(out, "const bitboard XRayOFCChecker[64][64][64] = {\n#define _____________________ 0ULL\n");
+	fprintf(out, "cache_align constexpr bitboard XRayOFCChecker[64][64][64] = {\n#define _____________________ 0ULL\n");
 	bitboard att[64];
 	for (int sq = 0 ; sq < 64 ; ++sq){
 		fprintf(out, "{");
@@ -724,4 +726,5 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 		fprintf(out, "\n");
 	}
 	fprintf(out, "#undef _____________________\n};\n\n");
+	fprintf(out, "#endif /* PRECOMPD_MAGICS_HPP_ */\n\n");
 }

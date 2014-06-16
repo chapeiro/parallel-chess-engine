@@ -6,8 +6,8 @@
  */
 #include <cmath>
 
-#ifndef VALUES_H_
-#define VALUES_H_
+#ifndef VALUES_HPP_
+#define VALUES_HPP_
 
 namespace Value{
 	const int MAT = 1 << 20;
@@ -22,4 +22,4 @@ namespace Value{
 #define mated(x) ((x) <= (100-Value::MAT))
 #define isMat(x) ((abs(x)) >= (Value::MAT-100))
 const int inf = Value::MAT << 1;
-#endif /* VALUES_H_ */
+#endif /* VALUES_HPP_ */

@@ -5,8 +5,8 @@
  *      Author: Chrysogelos Periklis
  */
 
-#ifndef UCIPROTOCOL_H_
-#define UCIPROTOCOL_H_
+#ifndef UCIPROTOCOL_HPP_
+#define UCIPROTOCOL_HPP_
 #include <string>
 
 enum UCI_command {
@@ -31,4 +31,4 @@ void help(UCI_command com);
 bool initializeEngine();
 int uci();
 
-#endif /* UCIPROTOCOL_H_ */
+#endif /* UCIPROTOCOL_HPP_ */

@@ -15,17 +15,19 @@
 
 void precomputeData(){
 	FILE * pd;
-	pd = fopen("precompd_PrecomputedData.cpp", "w");
+	pd = fopen("precompd_PrecomputedData.hpp", "w");
 	char ct[20];
 	time_t rawtime;
 	time(&rawtime);
 	strftime (ct, 20, "%Y/%m/%d %H:%M:%S", localtime(&rawtime));
-	fprintf(pd, "/**   Auto-generated file.\n");
+	fprintf(pd, "/** \n");
+	fprintf(pd, " * Auto-generated file.\n");
 	fprintf(pd, " * Contains pre-computed data for CChapeiro.\n");
 	fprintf(pd, " * Generated : %s\n", ct);
 	fprintf(pd, " **/\n\n");
-	fprintf(pd, "#include \"Board.h\"\n");
-	fprintf(pd, "#include \"MagicsAndPrecomputedData.h\"\n\n");
+	fprintf(pd, "#ifndef PRECOMPD_PRECOMPUTEDDATA_HPP_\n");
+	fprintf(pd, "#define PRECOMPD_PRECOMPUTEDDATA_HPP_\n\n");
+	fprintf(pd, "#include \"cchapeiro.hpp\"\n\n");
 	std::cout << ndbgline << "Generating De Bruijn's number and bitscan ..." << std::endl;
 	CGenBitScan a;
 	a.generateBitScan(pd);
@@ -65,7 +67,8 @@ void precomputeData(){
 	aDiag[7] |= aDiag[7] << 28;
 	for (int y = 6 ; y >= 0 ; --y) aDiag[y] = (aDiag[y+1] >> 1) & (notFfile[0]);
 	for (int y = 8 ; y < 15 ; ++y) aDiag[y] = (aDiag[y-1] << 1) & (notFfile[7]);
-	fprintf(pd, "\nconst bitboard filled::normal[64] = {\n\t");
+	fprintf(pd, "\nnamespace filled{");
+	fprintf(pd, "\n\tcache_align constexpr chapeiro::bitboard normal[64] = {\n\t");
 	for (int i = 0 ; i < 64 ; ++i){
 		fprintf(pd, formatBitboard, fnormal[i]);
 		if (i != 63) {
@@ -73,8 +76,51 @@ void precomputeData(){
 			if ((i&7)==7) fprintf(pd, "\n\t");
 		}
 	}
-	fprintf(pd, "\n};\n\n");
-	fprintf(pd, "const bitboard notFilled::normal[64] = {\n\t");
+	fprintf(pd, "\n\t};\n\n");
+	fprintf(pd, "\n\tcache_align constexpr chapeiro::bitboard rank[8] = {\n\t");
+	for (int i = 0 ; i < 8 ; ++i){
+		fprintf(pd, formatBitboard, frank[i]);
+		if (i != 7) {
+			fprintf(pd, ", ");
+		} else {
+			fprintf(pd, "\n\t");
+		}
+	}
+	fprintf(pd, "\n\t};\n\n");
+	fprintf(pd, "\n\tcache_align constexpr chapeiro::bitboard file[8] = {\n\t");
+	for (int i = 0 ; i < 8 ; ++i){
+		fprintf(pd, formatBitboard, ffile[i]);
+		if (i != 7) {
+			fprintf(pd, ", ");
+		} else {
+			fprintf(pd, "\n\t");
+		}
+	}
+	fprintf(pd, "\n\t};\n\n");
+	fprintf(pd, "\n\tcache_align constexpr chapeiro::bitboard mainDiag[15] = {\n\t");
+	for (int i = 0 ; i < 15 ; ++i){
+		fprintf(pd, formatBitboard, mDiag[i]);
+		if (i != 14) {
+			fprintf(pd, ", ");
+		} else {
+			fprintf(pd, "\n\t");
+		}
+	}
+	fprintf(pd, "\n\t};\n\n");
+	fprintf(pd, "\n\tcache_align constexpr chapeiro::bitboard antiDiag[15] = {\n\t");
+	for (int i = 0 ; i < 15 ; ++i){
+		fprintf(pd, formatBitboard, aDiag[i]);
+		if (i != 14) {
+			fprintf(pd, ", ");
+		} else {
+			fprintf(pd, "\n\t");
+		}
+	}
+	fprintf(pd, "\n\t};\n\n");
+	fprintf(pd, "}\n\n");
+
+	fprintf(pd, "namespace notFilled{\n");
+	fprintf(pd, "\tcache_align constexpr chapeiro::bitboard normal[64] = {\n\t");
 	for (int i = 0 ; i < 64 ; ++i){
 		fprintf(pd, formatBitboard, notFnormal[i]);
 		if (i != 63) {
@@ -82,67 +128,29 @@ void precomputeData(){
 			if ((i&7)==7) fprintf(pd, "\n\t");
 		}
 	}
-	fprintf(pd, "\n};\n\n");
-	fprintf(pd, "\nconst bitboard filled::rank[8] = {\n\t");
-	for (int i = 0 ; i < 8 ; ++i){
-		fprintf(pd, formatBitboard, frank[i]);
-		if (i != 7) {
-			fprintf(pd, ", ");
-		} else {
-			fprintf(pd, "\n");
-		}
-	}
-	fprintf(pd, "\n};\n\n");
-	fprintf(pd, "const bitboard notFilled::rank[8] = {\n\t");
+	fprintf(pd, "\n\t};\n\n");
+	fprintf(pd, "\tcache_align constexpr chapeiro::bitboard rank[8] = {\n\t");
 	for (int i = 0 ; i < 8 ; ++i){
 		fprintf(pd, formatBitboard, notFrank[i]);
 		if (i != 7) {
 			fprintf(pd, ", ");
 		} else {
-			fprintf(pd, "\n");
+			fprintf(pd, "\n\t");
 		}
 	}
-	fprintf(pd, "\n};\n\n");
-	fprintf(pd, "\nconst bitboard filled::file[8] = {\n\t");
-	for (int i = 0 ; i < 8 ; ++i){
-		fprintf(pd, formatBitboard, ffile[i]);
-		if (i != 7) {
-			fprintf(pd, ", ");
-		} else {
-			fprintf(pd, "\n");
-		}
-	}
-	fprintf(pd, "\n};\n\n");
-	fprintf(pd, "const bitboard notFilled::file[8] = {\n\t");
+	fprintf(pd, "\n\t};\n\n");
+	fprintf(pd, "\tcache_align constexpr chapeiro::bitboard file[8] = {\n\t");
 	for (int i = 0 ; i < 8 ; ++i){
 		fprintf(pd, formatBitboard, notFfile[i]);
 		if (i != 7) {
 			fprintf(pd, ", ");
 		} else {
-			fprintf(pd, "\n");
+			fprintf(pd, "\n\t");
 		}
 	}
-	fprintf(pd, "\n};\n\n");
-	fprintf(pd, "\nconst bitboard filled::mainDiag[15] = {\n\t");
-	for (int i = 0 ; i < 15 ; ++i){
-		fprintf(pd, formatBitboard, mDiag[i]);
-		if (i != 14) {
-			fprintf(pd, ", ");
-		} else {
-			fprintf(pd, "\n");
-		}
-	}
-	fprintf(pd, "\n};\n\n");
-	fprintf(pd, "\nconst bitboard filled::antiDiag[15] = {\n\t");
-	for (int i = 0 ; i < 15 ; ++i){
-		fprintf(pd, formatBitboard, aDiag[i]);
-		if (i != 14) {
-			fprintf(pd, ", ");
-		} else {
-			fprintf(pd, "\n");
-		}
-	}
-	fprintf(pd, "\n};\n\n");
+	fprintf(pd, "\n\t};\n\n");
+	fprintf(pd, "}\n\n");
+
 	bitboard KnightMovesl[64], KingMovesl[64], raysl[64][64];
 	int rayTp[64][64];
 	for (int i = 0 ; i < 64 ; ++i){
@@ -160,7 +168,7 @@ void precomputeData(){
 					);
 	}
 	std::cout << ndbgline << "Generating Knight's Moves..." << std::endl;
-	fprintf(pd, "const bitboard KnightMoves[64] = {\n\t");
+	fprintf(pd, "cache_align constexpr chapeiro::bitboard KnightMoves[64] = {\n\t");
 	for (int i = 0 ; i < 64 ; ++i){
 		fprintf(pd, formatBitboard, KnightMovesl[i]);
 		if (i != 63) {
@@ -170,7 +178,7 @@ void precomputeData(){
 	}
 	fprintf(pd, "\n};\n\n");
 	std::cout << ndbgline << "Generating King's Moves..." << std::endl;
-	fprintf(pd, "const bitboard KingMoves[64] = {\n\t");
+	fprintf(pd, "cache_align constexpr chapeiro::bitboard KingMoves[64] = {\n\t");
 	for (int i = 0 ; i < 64 ; ++i){
 		fprintf(pd, formatBitboard, KingMovesl[i]);
 		if (i != 63) {
@@ -218,7 +226,7 @@ void precomputeData(){
 			}
 		}
 	}
-	fprintf(pd, "const bitboard rays[64][64] = {\n#define _____________________ 0ULL\n\t");
+	fprintf(pd, "cache_align constexpr chapeiro::bitboard rays[64][64] = {\n#define _____________________ 0ULL\n\t");
 	for (int i = 0 ; i < 64 ; ++i){
 		fprintf(pd, "{\n\t\t");
 		for (int j = 0 ; j < 64 ; ++j){
@@ -234,11 +242,12 @@ void precomputeData(){
 		}
 		if (i != 63) fprintf(pd, "\n\t},\n\t");
 	}
-	fprintf(pd, "\n\t}\n};");
+	fprintf(pd, "\n\t}\n};\n");
+	fprintf(pd, "#endif /* PRECOMPD_PRECOMPUTEDDATA_HPP_ */\n\n");
 	fclose(pd);
 	std::cout << ndbgline << "Generating Magics For Rooks and Bishops..." << std::endl;
 	FILE * out;
-	out = fopen ("precompd_magics.cpp", "w");
+	out = fopen ("precompd_magics.hpp", "w");
 	MagicGenerator(maxRookBits, maxBishopBits, maxCheckAvoidanceShiftBits, raysl, out);
 	fclose(out);
 }

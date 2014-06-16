@@ -5,8 +5,8 @@
  *      Author: Chrysogelos Periklis
  */
 
-#ifndef SQUAREMAPPING_H_
-#define SQUAREMAPPING_H_
+#ifndef SQUAREMAPPING_HPP_
+#define SQUAREMAPPING_HPP_
 #include "MagicsAndPrecomputedData.hpp"
 #include <assert.h>
 #include <iostream>
@@ -54,4 +54,4 @@ inline void printbb(bitboard bb){
 		std::cerr << '\n';
 	}
 }
-#endif /* SQUAREMAPPING_H_ */
+#endif /* SQUAREMAPPING_HPP_ */

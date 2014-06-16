@@ -5,8 +5,8 @@
  *      Author: Chrysogelos Periklis
  */
 
-#ifndef TRANSPOSITIONTABLE_H_
-#define TRANSPOSITIONTABLE_H_
+#ifndef TRANSPOSITIONTABLE_HPP_
+#define TRANSPOSITIONTABLE_HPP_
 #include "zobristKeys.hpp"
 #include "MoveEncoding.hpp"
 #include <cassert>
@@ -133,4 +133,4 @@ template<int mode> inline int retrieveTTEntry(chapeiro::zobrist zobr, int depth,
 int getBestMove(chapeiro::zobrist zobr);
 void ttNewGame();
 
-#endif /* RANSPOSITIONTABLE_H_ */
+#endif /* RANSPOSITIONTABLE_HPP_ */

@@ -7,8 +7,8 @@
  *      Author: Chrysogelos Periklis
  */
 
-#ifndef BOARD_H_
-#define BOARD_H_
+#ifndef BOARD_HPP_
+#define BOARD_HPP_
 #include "Utilities.hpp"
 #include "cchapeiro.hpp"
 #include "zobristKeys.hpp"
@@ -67,10 +67,10 @@ enum Piece {
 };
 
 /**
-const int PIECEMASK = 14;
-const int LASTPIECE = 12;
-const int PIECESMAX = 16;
-const int WRONG_PIECE = -10;**/
+constexpr int PIECEMASK = 14;
+constexpr int LASTPIECE = 12;
+constexpr int PIECESMAX = 16;
+constexpr int WRONG_PIECE = -10;**/
 
 #define PIECEMASK (14)
 #define LASTPIECE (12)
@@ -93,33 +93,33 @@ typedef std::thread thread;
 #endif
 
 /**
-const bitboard lastRank_w = filled::rank[7];
-const bitboard lastRank_b = filled::rank[0];
-const bitboard notfile0 = notFilled::file[0];
-const bitboard notfile7 = notFilled::file[7];
-const bitboard notlastRank_w = ~filled::rank[7];
-const bitboard notlastRank_b = ~filled::rank[0];
-const bitboard dfRank_w = filled::rank[3];
-const bitboard dfRank_b = filled::rank[4];
-const bitboard pstartRank_w = filled::rank[1];
-const bitboard pstartRank_b = filled::rank[6];
+constexpr bitboard lastRank_w = filled::rank[7];
+constexpr bitboard lastRank_b = filled::rank[0];
+constexpr bitboard notfile0 = notFilled::file[0];
+constexpr bitboard notfile7 = notFilled::file[7];
+constexpr bitboard notlastRank_w = ~filled::rank[7];
+constexpr bitboard notlastRank_b = ~filled::rank[0];
+constexpr bitboard dfRank_w = filled::rank[3];
+constexpr bitboard dfRank_b = filled::rank[4];
+constexpr bitboard pstartRank_w = filled::rank[1];
+constexpr bitboard pstartRank_b = filled::rank[6];
 **/
-const bitboard lastRank_w = fd_rank(7);//filled::rank[7];
-const bitboard lastRank_b = fd_rank(0);//filled::rank[0];
-const bitboard notfile0 = ~fd_file(0);//notFilled::file[0];
-const bitboard notfile7 = ~fd_file(7);//notFilled::file[7];
-const bitboard notlastRank_w = ~fd_rank(7);//~filled::rank[7];
-const bitboard notlastRank_b = ~fd_rank(0);//~filled::rank[0];
-const bitboard dfRank_w = fd_rank(3);//filled::rank[3];
-const bitboard dfRank_b = fd_rank(4);//filled::rank[4];
-const bitboard pstartRank_w = fd_rank(1);//filled::rank[1];
-const bitboard pstartRank_b = fd_rank(6);//filled::rank[6];
+constexpr bitboard lastRank_w = fd_rank(7);//filled::rank[7];
+constexpr bitboard lastRank_b = fd_rank(0);//filled::rank[0];
+constexpr bitboard notfile0 = ~fd_file(0);//notFilled::file[0];
+constexpr bitboard notfile7 = ~fd_file(7);//notFilled::file[7];
+constexpr bitboard notlastRank_w = ~fd_rank(7);//~filled::rank[7];
+constexpr bitboard notlastRank_b = ~fd_rank(0);//~filled::rank[0];
+constexpr bitboard dfRank_w = fd_rank(3);//filled::rank[3];
+constexpr bitboard dfRank_b = fd_rank(4);//filled::rank[4];
+constexpr bitboard pstartRank_w = fd_rank(1);//filled::rank[1];
+constexpr bitboard pstartRank_b = fd_rank(6);//filled::rank[6];
 
 //color definitions
 /**
-const int white = 0;
-const int black = 1;
-const int colormask = 1;
+constexpr int white = 0;
+constexpr int black = 1;
+constexpr int colormask = 1;
 **/
 
 #define white (0)
@@ -155,29 +155,29 @@ enum SearchMode {
 
 //castling precomputed
 template<int color> class castlingc {
-public :
-	static const bitboard KingSide = (color == white) ? 0x0000000000000001ull : 0x0100000000000000ull;
-	static const bitboard QueenSide = (color == white) ? 0x0000000000000080ull : 0x8000000000000000ull;
-	static const bitboard KingSideSpace = (color == white) ? 0x0000000000000006ull : 0x0600000000000000ull;
-	static const bitboard QueenSideSpace = (color == white) ? 0x0000000000000070ull : 0x7000000000000000ull;
-	static const bitboard KSCPassing = (color == white) ? 0x0000000000000004ull : 0x0400000000000000ull;
-	static const int KSCPassingSq = (color == white) ? 2 : 58;//square(KSCPassing);
-	static const bitboard QSCPassing = (color == white) ? 0x0000000000000010ull : 0x1000000000000000ull;
-	static const int QSCPassingSq = (color == white) ? 4 : 60;//square(QSCPassing);
-	static const int kingSqBefore = (color == white) ? 3 : 59;
-	static const int kingSqAfterKSC = (color == white) ? 1 : 57;
-	static const int kingSqAfterQSC = (color == white) ? 5 : 61;
-	static const bitboard KSCKT = (color == white) ? 0x000000000000000Aull : 0x0A00000000000000ull;
-	static const bitboard QSCKT = (color == white) ? 0x0000000000000028ull : 0x2800000000000000ull;
-	static const bitboard KSCRT = (color == white) ? 0x0000000000000005ull : 0x0500000000000000ull;
-	static const bitboard QSCRT = (color == white) ? 0x0000000000000090ull : 0x9000000000000000ull;
-	static const bitboard KSCFT = (color == white) ? 0x000000000000000Full : 0x0F00000000000000ull;
-	static const bitboard QSCFT = (color == white) ? 0x00000000000000B8ull : 0xB800000000000000ull;
-	static const bitboard deactrights = (color==white) ? 0xFFFFFFFFFFFFFF7Eull : 0x7EFFFFFFFFFFFFFFull;
+public:
+	static constexpr bitboard KingSide = (color == white) ? 0x0000000000000001ull : 0x0100000000000000ull;
+	static constexpr bitboard QueenSide = (color == white) ? 0x0000000000000080ull : 0x8000000000000000ull;
+	static constexpr bitboard KingSideSpace = (color == white) ? 0x0000000000000006ull : 0x0600000000000000ull;
+	static constexpr bitboard QueenSideSpace = (color == white) ? 0x0000000000000070ull : 0x7000000000000000ull;
+	static constexpr bitboard KSCPassing = (color == white) ? 0x0000000000000004ull : 0x0400000000000000ull;
+	static constexpr int KSCPassingSq = (color == white) ? 2 : 58;//square(KSCPassing);
+	static constexpr bitboard QSCPassing = (color == white) ? 0x0000000000000010ull : 0x1000000000000000ull;
+	static constexpr int QSCPassingSq = (color == white) ? 4 : 60;//square(QSCPassing);
+	static constexpr int kingSqBefore = (color == white) ? 3 : 59;
+	static constexpr int kingSqAfterKSC = (color == white) ? 1 : 57;
+	static constexpr int kingSqAfterQSC = (color == white) ? 5 : 61;
+	static constexpr bitboard KSCKT = (color == white) ? 0x000000000000000Aull : 0x0A00000000000000ull;
+	static constexpr bitboard QSCKT = (color == white) ? 0x0000000000000028ull : 0x2800000000000000ull;
+	static constexpr bitboard KSCRT = (color == white) ? 0x0000000000000005ull : 0x0500000000000000ull;
+	static constexpr bitboard QSCRT = (color == white) ? 0x0000000000000090ull : 0x9000000000000000ull;
+	static constexpr bitboard KSCFT = (color == white) ? 0x000000000000000Full : 0x0F00000000000000ull;
+	static constexpr bitboard QSCFT = (color == white) ? 0x00000000000000B8ull : 0xB800000000000000ull;
+	static constexpr bitboard deactrights = (color==white) ? 0xFFFFFFFFFFFFFF7Eull : 0x7EFFFFFFFFFFFFFFull;
 };
-const bitboard castlingsmagic = 0x8100000000000081ull;
-const bitboard allcastlingrights = 0x8100000000000081ull;
-const bitboard castlingrights[2] = {0x0000000000000081ull, 0x8100000000000000ull};
+constexpr bitboard castlingsmagic = 0x8100000000000081ull;
+constexpr bitboard allcastlingrights = 0x8100000000000081ull;
+constexpr bitboard castlingrights[2] = {0x0000000000000081ull, 0x8100000000000000ull};
 
 #define All_Pieces(x) ((((x)&colormask)==white) ? White_Pieces : Black_Pieces)
 
@@ -213,10 +213,10 @@ class Board {
 #endif
 		std::string pre;
 
-	public :
+	public:
 		//Construction
 		static Board* createBoard(const char FEN[] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-		static void initialize(){}
+		static void initialize(){};
 		Board(Board * b);
 		Board(char fenBoard[] = (char*) "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", char fenPlaying = 'w', char fenCastling[] = (char*) "KQkq", int fenEnPX = -1, int fenEnPY = -1, int fenHC = 0, int fenFM = 1);
 		~Board(){ if (searchThread) searchThread->join(); }
@@ -234,6 +234,7 @@ class Board {
 		void stop();
 
 	private :
+		char * moveToString(int move, char* m) const __restrict;
 		/**
 		 * if p is a char representing a white piece,
 		 * piece's index at Pieces array is returned.
@@ -258,7 +259,7 @@ class Board {
 		int evaluatePawnStructure() __restrict;
 		template<int color> void deactivateCastlingRights() __restrict;
 		void togglePlaying() __restrict;
-		void startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch) __restrict;
+		void startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
 		std::string extractPV(int depth);
 
 		template<int color> bool validPosition(int kingSq) __restrict;
@@ -278,7 +279,6 @@ class Board {
 		template<int color> void filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq) __restrict;
 		template<int color> bitboard getNPinnedPawns(bitboard occ, int kingSq) __restrict;
 		template<int color> int getMove(bitboard tf, int prom) __restrict;
-		char * moveToString(int move, char* m) __restrict;
 
 		template<SearchMode mode, int color, bool root> int search(int alpha, int beta, int depth) __restrict;
 		template<SearchMode mode, int color> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict;
@@ -499,6 +499,7 @@ template<SearchMode mode, int color, bool root> int Board::search(int alpha, int
 	unsigned long int bestProm (0);
 
 	unsigned long int kingSq = square(Pieces[KING | color]);
+#ifndef NDEBUG
 	bitboard oldP[(KING | black)+1];
 	for (int i = 0 ; i <= (KING | black) ; ++i) oldP[i] = Pieces[i];
 	bitboard all = 0;
@@ -515,8 +516,9 @@ go infinite
 	all = 0;
 	for (int i = PAWN | (color^1) ; i <= (KING | (color^1)) ; i += 2) all |= Pieces[i];
 	ASSUME(All_Pieces(color^1) == all);
-	const bitboard occ = All_Pieces(white) | All_Pieces(black);
 	bitboard oldAll = All_Pieces(color);
+#endif
+	const bitboard occ = All_Pieces(white) | All_Pieces(black);
 #ifndef NO_TRANSPOSITION_TABLE
 #ifndef NO_KILLER_MOVE
 	if (mode != Perft){
@@ -765,11 +767,13 @@ go infinite
 	//TODO add heuristics
 	bitboard checkedBy = kingIsAttackedBy<color>(occ, kingSq);
 	//FIXME REMOVE
+#ifndef NDEBUG
 	all = 0;
 	for (int i = PAWN | color ; i <= (KING | color) ; i += 2) all |= Pieces[i];
 	for (int i = 0 ; i <= (KING | black) ; ++i) if (oldP[i] != Pieces[i]) std::cout << i << std::hex << Pieces[i] << oldP[i] << std::endl;
 	ASSUME(oldAll == All_Pieces(color));
 	ASSUME(all == oldAll);
+#endif
 	if (checkedBy == bitboard(0)){
 		bitboard nPinnedPawn = getNPinnedPawns<color>(occ, kingSq);
 		bitboard attacking[2] = {Pieces[PAWN | color], Pieces[PAWN | color]};
@@ -800,20 +804,14 @@ go infinite
 			for (int diff = ((color==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 				bitboard tmp = attacking[at] & Pieces[captured];
 				while (tmp){
-					unsigned long int toSq;
 					bitboard to = pop_lsb(tmp);
-					bitboard from = to;
-					if (color == white){
-						from >>= diff;
-					} else {
-						from <<= -diff;
-					}
+					bitboard from((color==white)?(to >> diff):(to << -diff));
 					bitboard tf = to | from;
 					Pieces[captured] ^= to;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
 					Pieces[PAWN | color] ^= from;
-					toSq = square(to);
+					unsigned long int toSq = square(to);
 					zobr ^= zobrist::keys[captured][toSq];
 					zobr ^= zobrist::keys[PAWN | color][toSq-diff];
 					for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
@@ -2778,4 +2776,4 @@ inline time_td get_current_time();
 inline time_duration milli_to_time(U64 milli);
 inline time_duration get_zero_time();
 inline time_td get_factored_time(time_td el_time);
-#endif /* BOARD_H_ */
+#endif /* BOARD_HPP_ */

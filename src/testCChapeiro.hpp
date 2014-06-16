@@ -5,8 +5,8 @@
  *      Author: Chrysogelos Periklis
  */
 
-#ifndef TESTCCHAPEIRO_H_
-#define TESTCCHAPEIRO_H_
+#ifndef TESTCCHAPEIRO_HPP_
+#define TESTCCHAPEIRO_HPP_
 #include <string>
 #include <iostream>
 #include <ctime>
@@ -21,4 +21,4 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 bool perftInterface(string input, time_t &totalTime, unsigned long long int &totalNodes, int mindepth, int maxdepth);
 bool pvtestInterface(string input, time_t &totalTime, unsigned long long int &totalNodes, unsigned long long int &totalLeafNodes);
 
-#endif /* TESTCCHAPEIRO_H_ */
+#endif /* TESTCCHAPEIRO_HPP_ */

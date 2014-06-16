@@ -5,8 +5,8 @@
  *      Author: Periklis
  */
 
-#ifndef UTILITIES_H_
-#define UTILITIES_H_
+#ifndef UTILITIES_HPP_
+#define UTILITIES_HPP_
 #include "cchapeiro.hpp"
 
 #ifdef _MSC_VER
@@ -22,4 +22,4 @@ inline int popCount(chapeiro::bitboard a){
 
 
 
-#endif /* UTILITIES_H_ */
+#endif /* UTILITIES_HPP_ */
