@@ -135,10 +135,10 @@ CXX_OBJECTS= $(CXX_SOURCES:.cpp=.o)
 
 OBJ_FILES:=$(addprefix $(OBJ_DBG), $(CXX_OBJECTS)) $(addprefix $(OBJ_RLS), $(CXX_OBJECTS))
 
+all: debug release
+
 debug:CXXFLAGS+= $(DEBUGFLAGS) $(PROFFLAGS)
 release:CXXFLAGS+= $(OPTFLAGS) $(PROFFLAGS)
-
-all: debug release
 
 release:BIN_DIR:= $(BIN_RLS)
 release:IMP_DIR:= $(RLS_DIR)
@@ -157,8 +157,6 @@ $(BIN_RLS)cchapeiro:$(addprefix $(OBJ_RLS), $(CXX_OBJECTS))
 $(BIN_DBG)cchapeiro:$(addprefix $(OBJ_DBG), $(CXX_OBJECTS))
 
 release: $(BIN_RLS)cchapeiro
-release: 
-	echo $(addprefix $(OBJ_RLS), $(CXX_OBJECTS))
 debug:   $(BIN_DBG)cchapeiro
 
 .PHONY: all debug release
@@ -183,7 +181,7 @@ clean:
 
 $(DEP_DBG)%.d: %.cpp Makefile
 	@mkdir -p $(@D)
-	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_SDD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DDD)$(subst /,\/,$(<:.cpp=.d)): Makefile\\\n/g' > $@
+	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ODD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DDD)$(subst /,\/,$(<:.cpp=.d)): Makefile\\\n/g' > $@
 
 $(DEP_RLS)%.d: %.cpp Makefile
 	@mkdir -p $(@D)
