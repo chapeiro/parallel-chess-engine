@@ -5,7 +5,7 @@ DEBUGFLAGS= -g3 -pg
 DEBUGFLAGS+= -funsafe-loop-optimizations
 DEBUGFLAGS+= -Wunsafe-loop-optimizations
 
-TFLAGS= -O3
+TFLAGS= -O3 
 TFLAGS+= -finline 
 TFLAGS+= -march=native
 TFLAGS+= -fmerge-all-constants
@@ -127,7 +127,8 @@ SED_ORD=$(subst /,\/,$(OBJ_RLS))
 SED_DDD=$(subst /,\/,$(DEP_DBG))
 SED_DRD=$(subst /,\/,$(DEP_RLS))
 
-CXX_SOURCESD= $(wildcard $(SRC_ROOT)/*.cpp)
+CXX_SOURCESD= $(shell find $(SRC_ROOT) -name "*.cpp")
+# CXX_SOURCESD= $(wildcard $(SRC_ROOT)/*.cpp)
 CXX_SOURCES= $(subst $(SRC_ROOT)/,,$(CXX_SOURCESD))
 CXX_OBJECTS= $(CXX_SOURCES:.cpp=.o)
 # CXX_OBJCTESD= $(addprefix $(OBJ_DIR)/, $(CXX_OBJCTES))
