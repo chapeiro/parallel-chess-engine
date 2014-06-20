@@ -13,6 +13,7 @@
 #include "cchapeiro.hpp"
 #include "zobristKeys.hpp"
 #include "MagicsAndPrecomputedData.hpp"
+#include "TimeManagement/TimeManager.hpp"
 #include "SquareMapping.hpp"
 #include "MoveEncoding.hpp"
 #include <string>
@@ -28,8 +29,10 @@
 #else
 #include <thread>
 #include <chrono>
+#include <atomic>
 #endif
 
+#include "TimeManagement/TimeManager.hpp"
 #include "TranspositionTable.hpp"
 #include <iomanip>
 
@@ -66,16 +69,16 @@ enum Piece {
 	CPIECES = 14
 };
 
-/**
+
 constexpr int PIECEMASK = 14;
 constexpr int LASTPIECE = 12;
-constexpr int PIECESMAX = 16;
-constexpr int WRONG_PIECE = -10;**/
+constexpr int PIECESMAX = LASTPIECE;
+constexpr int WRONG_PIECE = -10;
 
-#define PIECEMASK (14)
-#define LASTPIECE (12)
-#define PIECESMAX LASTPIECE
-#define WRONG_PIECE (-10)
+// #define PIECEMASK (14)
+// #define LASTPIECE (12)
+// #define PIECESMAX LASTPIECE
+// #define WRONG_PIECE (-10)
 
 #define fd_rank(x) (0xFFull << ((x) << 3))
 #define fd_file(x) (0x0101010101010101ull << (7^(x)))
@@ -116,15 +119,15 @@ constexpr bitboard pstartRank_w = fd_rank(1);//filled::rank[1];
 constexpr bitboard pstartRank_b = fd_rank(6);//filled::rank[6];
 
 //color definitions
-/**
+
 constexpr int white = 0;
 constexpr int black = 1;
 constexpr int colormask = 1;
-**/
 
-#define white (0)
-#define black (1)
-#define colormask (1)
+
+// #define white (0)
+// #define black (1)
+// #define colormask (1)
 
 struct KingException : public std::exception {
 	bool color;
@@ -199,7 +202,7 @@ class Board {
 		cache_align Zobrist history[256];
 		int lastHistoryEntry;
 		thread *searchThread;
-		bool interruption_requested;
+		// std::atomic<bool> interruption_requested;
 
 	public:
 		//for Perft
@@ -230,6 +233,7 @@ class Board {
 		void printHistory();
 		U64 perft(int depth);
 		int test(int depth);
+		void go(int maxDepth, time_control tc);
 		void go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
 		void stop();
 
@@ -260,6 +264,7 @@ class Board {
 		template<int color> void deactivateCastlingRights() __restrict;
 		void togglePlaying() __restrict;
 		void startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
+		void startSearchTM(int maxDepth, time_control tc);
 		std::string extractPV(int depth);
 
 		template<int color> bool validPosition(int kingSq) __restrict;
@@ -271,10 +276,11 @@ class Board {
 		template<int color> bitboard kingIsAttackedBy(bitboard occ, int kingSq) __restrict;
 
 		template<int color> bool stalemate() __restrict;
+		void assert_state() const __restrict;
 
-		bitboard bishopAttacks(bitboard occ, const int &sq) __restrict;
-		bitboard rookAttacks(bitboard occ, const int &sq) __restrict;
-		bitboard queenAttacks(bitboard occ, const int &sq) __restrict;
+		static constexpr bitboard bishopAttacks(bitboard occ, const int sq);
+		static constexpr bitboard rookAttacks(bitboard occ, const int sq);
+		static constexpr bitboard queenAttacks(bitboard occ, const int sq);
 		template<int color> bitboard getChecker(bitboard occ, unsigned long int sq, int kingSq) __restrict;
 		template<int color> void filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq) __restrict;
 		template<int color> bitboard getNPinnedPawns(bitboard occ, int kingSq) __restrict;
@@ -437,6 +443,7 @@ inline void Board::prepare_beta_cutoff(int oldhm, bitboard old_enpassant, int en
  * @return
  **/
 template<SearchMode mode, int color, bool root> int Board::search(int alpha, int beta, int depth) __restrict{
+	assert_state();
 	//FIXME This is saved as a betaCutOff later in the TT!
 	if (color==white) if (interruption_requested) return inf; //TODO Revision! does not seem such a good idea :(
 	//count nodes searched
@@ -593,7 +600,7 @@ go infinite
 						kingSq = castlingc<color>::kingSqBefore;
 					} else {
 						int capturedPiece = QUEEN | (color ^ 1);
-						while (((Pieces[capturedPiece] & killerTo) == 0) && capturedPiece >= 0) capturedPiece -= 2;
+						while (capturedPiece >= 0 && !(Pieces[capturedPiece] & killerTo)) capturedPiece -= 2;
 						bitboard tf = killerFrom | killerTo;
 						Zobrist toggle = zobrist::keys[killerPiece][killerFromSq];
 						toggle ^= zobrist::keys[killerPiece][killerToSq];
@@ -653,7 +660,7 @@ go infinite
 						int diff = killerToSq - killerFromSq;
 						bitboard tf = killerFrom ^ killerTo;
 						//-7 = 1..11 1001, -8 = 1..11 1000, -9 1..11 0111
-						if (diff & 1) {
+						if (diff & 1) { //capture
 							int capturedPiece, capturedSq;
 							bitboard capturedPos;
 							if (promSp <= 0xF) {
@@ -875,12 +882,8 @@ go infinite
 			for (int diff = ((color==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 				bitboard tmp = attacking[at] & Pieces[captured];
 				while (tmp){
-					bitboard to = pop_lsb(tmp), from;
-					if (color == white){
-						from = to >> diff;
-					} else {
-						from = to << -diff;
-					}
+					bitboard to = pop_lsb(tmp);
+					bitboard from((color==white)?(to >> diff):(to << -diff));
 					bitboard tf = to | from;
 					unsigned long int toSq = square(to);
 					Zobrist toggle = zobrist::keys[PAWN | color][toSq];
@@ -2696,29 +2699,39 @@ template<int color> int Board::getEvaluation(int depth) __restrict{
 	return score;
 }
 
-inline bitboard Board::bishopAttacks(bitboard occ, const int &sq) __restrict{
-	occ &= BishopMask[sq];
-	occ *= BishopMagic[sq];
+constexpr bitboard Board::bishopAttacks(bitboard occ, const int sq){
+// 	occ &= BishopMask[sq];
+// 	occ *= BishopMagic[sq];
+// #ifndef fixedShift
+// 	occ >>= BishopShift[sq];
+// #else
+// 	occ >>= 64-maxBishopBits;
+// #endif
+// 	return BishopAttacks[sq][occ];
 #ifndef fixedShift
-	occ >>= BishopShift[sq];
+	return BishopAttacks[sq][((occ & BishopMask[sq]) * BishopMagic[sq]) >> BishopShift[sq]];
 #else
-	occ >>= 64-maxBishopBits;
+	return BishopAttacks[sq][((occ & BishopMask[sq]) * BishopMagic[sq]) >> (64-maxBishopBits)];
 #endif
-	return BishopAttacks[sq][occ];
 }
 
-inline bitboard Board::rookAttacks(bitboard occ, const int &sq) __restrict{
-	occ &= RookMask[sq];
-	occ *= RookMagic[sq];
+constexpr bitboard Board::rookAttacks(bitboard occ, const int sq){
+// 	occ &= RookMask[sq];
+// 	occ *= RookMagic[sq];
+// #ifndef fixedShift
+// 	occ >>= RookShift[sq];
+// #else
+// 	occ >>= 64-maxRookBits;
+// #endif
+// 	return RookAttacks[sq][occ];
 #ifndef fixedShift
-	occ >>= RookShift[sq];
+	return RookAttacks[sq][((occ & RookMask[sq]) * RookMagic[sq]) >> RookShift[sq]];
 #else
-	occ >>= 64-maxRookBits;
+	return RookAttacks[sq][((occ & RookMask[sq]) * RookMagic[sq]) >> (64-maxRookBits)];
 #endif
-	return RookAttacks[sq][occ];
 }
 
-inline bitboard Board::queenAttacks(bitboard occ, const int &sq) __restrict{
+constexpr bitboard Board::queenAttacks(bitboard occ, const int sq){
 	return rookAttacks(occ, sq) | bishopAttacks(occ, sq);
 }
 
@@ -2770,6 +2783,24 @@ inline int Board::evaluatePawnStructure() __restrict{
 //	emptyFiles |= pawns;
 	while (pawns) pscore -= Value::BpawnSq[square(pop_lsb(pawns))];
 	return pscore;
+}
+
+inline void Board::assert_state() const __restrict{
+#ifndef NDEBUG
+	bitboard all = 0;
+	for (int i = PAWN | white ; i <= (KING | white) ; i += 2) {
+		ASSUME(!(all & Pieces[i]));
+		all |= Pieces[i];
+	}
+	ASSUME(White_Pieces == all);
+	all = 0;
+	for (int i = PAWN | black ; i <= (KING | black) ; i += 2) {
+		ASSUME(!(all & Pieces[i]));
+		all |= Pieces[i];
+	}
+	ASSUME(Black_Pieces == all);
+	ASSUME(!(Black_Pieces & White_Pieces));
+#endif
 }
 
 inline time_td get_current_time();

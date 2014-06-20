@@ -12,6 +12,7 @@
 #include "MoveEncoding.hpp"
 #include "Values.hpp"
 #include <ctime>
+#include <atomic>
 
 const int Value::piece[12] = {100,
 							 -100,
@@ -71,7 +72,7 @@ const int Value::BpawnSq[64] = {
 		 0,  0,  0,  0,  0,  0,  0,  0
 };
 
-bool interruption_requested;
+std::atomic<bool> interruption_requested;
 
 Board* Board::createBoard(const char FEN[]) {
 	char fenBoard[71], fenEnP[3];
@@ -615,11 +616,78 @@ void Board::go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int moves
 	searchThread = new thread(&Board::startSearch, this, maxDepth, wTime, bTime, wInc, bInc, movesUntilTimeControl, searchForXMsec, infinitiveSearch);
 }
 
+void Board::go(int maxDepth, time_control tc){
+	searchThread = new thread(&Board::startSearchTM, this, maxDepth, tc);
+}
+
 void Board::stop(){
 	if (searchThread == NULL) return;
 	interruption_requested = true;
 	delete searchThread;
 	searchThread = NULL;
+}
+
+
+void Board::startSearchTM(int maxDepth, time_control tc){
+	TimeManager<> tm(tc, (playing == white) ? WHITE : BLACK, &interruption_requested);
+
+	int depth = (STARTING_DEPTH < maxDepth) ? STARTING_DEPTH : 1; //STARTING_DEPTH
+	int alpha = -inf;
+	int beta = inf;
+	int move = 0;
+	int score = 0;
+	int matdcycles = 0;
+	int matmoves = inf;
+	U64 stNodes = nodes;
+	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
+	Board * extrPv = NULL;
+	while (depth <= maxDepth && tm.continue_search(ELAPSED_TIME_FACTOR) && matdcycles < 3){
+		rootDepth = depth;
+		if (playing == white){
+			score = search<PV, white, true>(alpha, beta, depth);
+		} else {
+			score = search<PV, black, true>(alpha, beta, depth);
+		}
+		tm.search_lap_tick();
+		if (interruption_requested) {
+			ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
+			break; //DO NOT USE THE SCORE RETURNED BY SEARCH!!! IT IS NOT VALID!!!
+		}
+		move = getBestMove(zobr);
+		std::chrono::milliseconds etime(tm.getElapsedTime());
+		//Sending Infos
+		std::cout << "info";
+		std::cout << " depth " << depth;
+		std::cout << " time " << etime.count();
+		std::cout << " nodes " << nodes-stNodes;
+		if (etime.count() >= 1000) std::cout << " nps " << (int) (((nodes-stNodes)*1000ull) / (etime / 1000.0).count());
+
+		extrPv = new Board(this);
+		std::cout << " pv " << extrPv->extractPV(depth);
+		if (isMat(score)) {
+			std::cout << " score mate ";
+			if (score < 0) std::cout << '-';
+			matmoves = ((Value::MAT - abs(score) - 1)/2) + 1;
+			std::cout << matmoves;
+			++matdcycles;
+		} else {
+			matdcycles = 0;
+			std::cout << " score cp " << score;
+		}
+		std::cout << " hashfull " << (1000*ttUsed/TRANSPOSITION_TABLE_SIZE);
+		delete extrPv;
+		std::cout << std::endl;
+		std::cout.flush();
+		if (debugcc) std::cerr << ndbgline << "Score : " << score << std::endl;
+		++depth;
+	}
+	if (move != 0){
+		char m[6];
+		std::cout << "bestmove " << moveToString(move, m) << std::endl;
+		if (depth > maxDepth) std::cerr << ndbgline << "Maximum Depth reached!" << std::endl;
+	} else {
+		std::cerr << ndbgline << "Move not found in hashtable !!!" << std::endl;
+	}
 }
 
 int rootDepth = 0;

@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 #include "testCChapeiro.hpp"
-#include "uciProtocol.hpp"
+#include "CommunicationProtocols/uciProtocol.hpp"
 #include <cstdio>
 using namespace std;
 bool debugcc = false;

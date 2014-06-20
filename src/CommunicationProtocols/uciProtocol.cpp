@@ -6,11 +6,12 @@
  */
 
 #include <iostream>
-#include "Board.hpp"
+#include "../Board.hpp"
 #include <string>
 #include <stdlib.h>
+#include <regex>
 #include "uciProtocol.hpp"
-#include "TranspositionTable.hpp"
+#include "../TranspositionTable.hpp"
 
 using namespace std;
 
@@ -54,6 +55,72 @@ void help(UCI_command com){
 bool initializeEngine(){
 	Board::initialize();
 	return true;
+}
+
+constexpr char UCI_go_infinite[]  =  "infinite";
+constexpr char UCI_go_depth[]     =     "depth";
+constexpr char UCI_go_movetime[]  =  "movetime";
+constexpr char UCI_go_movestogo[] = "movestogo";
+constexpr char UCI_go_wtime[]     =     "wtime";
+constexpr char UCI_go_btime[]     =     "btime";
+constexpr char UCI_go_winc[]      =      "winc";
+constexpr char UCI_go_binc[]      =      "binc";
+
+std::pair<int, time_control> getTimeControl(string t){
+	stringstream inp(t);
+
+	//default values
+	time_control tc;
+	tc.infinite_search  = false;
+	tc.auto_search_time =  true;
+	tc.movestogo = NO_NEXT_TIME_CONTROL;
+	tc.whitep.remaining = static_cast<std::chrono::milliseconds>(40000);
+	tc.blackp.remaining = static_cast<std::chrono::milliseconds>(40000);
+	tc.whitep.increment = static_cast<std::chrono::milliseconds>(0);
+	tc.blackp.increment = static_cast<std::chrono::milliseconds>(0);
+	int depth = INF;
+
+	//check arguments
+	string tmp;
+	unsigned long long int tmpi;
+	while (!inp.eof() && !inp.bad()){
+		inp.clear();
+		inp >> tmp;
+		//chech for booleans first...
+		if (UCI_go_infinite         == tmp){
+			tc.infinite_search = true;
+		} else { //check for commands followed by int...
+			inp >> tmpi;
+			if (!inp.good()) continue;
+
+			if (UCI_go_depth     == tmp){
+				depth = (int) tmpi;
+			} else if (UCI_go_movetime  == tmp){
+				tc.auto_search_time = false;
+				tc.search_time = std::chrono::milliseconds(tmpi);
+			} else if (UCI_go_movestogo == tmp){
+				tc.movestogo = (int) tmpi;
+			} else if (UCI_go_wtime     == tmp){
+				if (!tmpi) tmpi = 1000;
+				tc.whitep.remaining = std::chrono::milliseconds(tmpi);
+			} else if (UCI_go_btime     == tmp){
+				if (!tmpi) tmpi = 1000;
+				tc.blackp.remaining = std::chrono::milliseconds(tmpi);
+			} else if (UCI_go_winc      == tmp){
+				tc.whitep.increment = std::chrono::milliseconds(tmpi);
+			} else if (UCI_go_binc      == tmp){
+				tc.blackp.increment = std::chrono::milliseconds(tmpi);
+			}
+		}
+	}
+
+	// //TODO bool ponder = input.find("ponder") != string::npos;
+	// // int mate = -1;
+	// // if ((index = input.find("mate")) != string::npos) sscanf(input.substr(index).c_str(), "mate %i", &mate);
+	// // int nodes = INF;
+	// // if ((index = input.find("nodes")) != string::npos) sscanf(input.substr(index).c_str(), "nodes %i", &nodes);
+
+	return make_pair(depth, tc);
 }
 
 int uci(){
@@ -125,36 +192,14 @@ int uci(){
 			ttNewGame();
 			board = NULL;
 		} else if (input.find("go")==0){
-			input.erase(0, 3);
+			input.erase(0, 2);
 			if (!board){
 				cerr << "Unknown position! Search can not start. Use position command." << endl;
 				ttNewGame();
 				board = new Board();
 			}
-			bool infinite = input.find("infinite") != string::npos;
-			//TODO bool ponder = input.find("ponder") != string::npos;
-			U64 movetime = INF;
-			size_t index;
-			if ((index = input.find("movetime")) != string::npos) sscanf(input.substr(index).c_str(), "movetime %llu", &movetime);
-			int mate = -1;
-			if ((index = input.find("mate")) != string::npos) sscanf(input.substr(index).c_str(), "mate %i", &mate);
-			int nodes = INF;
-			if ((index = input.find("nodes")) != string::npos) sscanf(input.substr(index).c_str(), "nodes %i", &nodes);
-			int depth = INF;
-			if ((index = input.find("depth")) != string::npos) sscanf(input.substr(index).c_str(), "depth %i", &depth);
-			int movestogo = NO_NEXT_TIME_CONTROL;
-			if ((index = input.find("movestogo")) != string::npos) sscanf(input.substr(index).c_str(), "movestogo %i", &movestogo);
-			U64 winc = 0;
-			if ((index = input.find("winc")) != string::npos) sscanf(input.substr(index).c_str(), "winc %llu", &winc);
-			U64 binc = 0;
-			if ((index = input.find("binc")) != string::npos) sscanf(input.substr(index).c_str(), "binc %llu", &binc);
-			U64 wtime = 40000;
-			if ((index = input.find("wtime")) != string::npos) sscanf(input.substr(index).c_str(), "wtime %llu", &wtime);
-			U64 btime = 40000;
-			if ((index = input.find("btime")) != string::npos) sscanf(input.substr(index).c_str(), "btime %llu", &btime);
-			if (!wtime) wtime = 1000;
-			if (!btime) btime = 1000;
-			board->go(depth, wtime, btime, winc, binc, movestogo, movetime, infinite);
+			std::pair<int, time_control> p(getTimeControl(input));
+			board->go(p.first, p.second);
 		} else if (input.find("stop")!=string::npos){
 			if (board) board->stop();
 #ifdef STATS

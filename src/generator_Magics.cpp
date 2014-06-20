@@ -334,11 +334,7 @@ void printgm(bitboard bb) {
 
 bitboard RookMagicCalc[64];
 bitboard BishopMagicCalc[64];
-#ifdef _MSC_VER
-#define format "%#018I64xULL"
-#else
-#define format "%#018llxULL"
-#endif
+
 void generate(const int bits[64], bool rook, int a, bitboard magicl[64], FILE* out){
 	for (int square = 0; square < 64; ++square) {
 		fprintf(out, "\t");
@@ -347,7 +343,7 @@ void generate(const int bits[64], bool rook, int a, bitboard magicl[64], FILE* o
 #else
 		magicl[square] = generateMagics(square, a, rook);
 #endif
-		fprintf(out, format, magicl[square]);
+		fprintf(out, formatBitboard, magicl[square]);
 		if (square != 63) fprintf(out, ",");
 		fprintf(out, "\t//square : %02i\n", square);
 	}
@@ -429,7 +425,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 		} else {
 			fprintf(out, " ");
 		}
-		fprintf(out, format, rookMask(1ULL << i));
+		fprintf(out, formatBitboard, rookMask(1ULL << i));
 		if (i != 63) fprintf(out, ",");
 	}
 	fprintf(out, "\n};\n\n");
@@ -440,7 +436,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 		} else {
 			fprintf(out, " ");
 		}
-		fprintf(out, format, bishopMask(1ULL << i));
+		fprintf(out, formatBitboard, bishopMask(1ULL << i));
 		if (i != 63) fprintf(out, ",");
 	}
 	fprintf(out, "\n};\n\n");
@@ -494,7 +490,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 				fprintf(out, " ");
 			}
 			if (used[i]!=0){
-				fprintf(out, format, used[i]);
+				fprintf(out, formatBitboard, used[i]);
 			} else {
 				fprintf(out, "_____________________");
 			}
@@ -530,7 +526,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 				fprintf(out, " ");
 			}
 			if (used[i]!=0){
-				fprintf(out, format, used[i]);
+				fprintf(out, formatBitboard, used[i]);
 			} else {
 				fprintf(out, "_____________________");
 			}
@@ -657,7 +653,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 				fprintf(out, " ");
 			}
 			if (mask[sq][i]!=0){
-				fprintf(out, format, mask[sq][i]);
+				fprintf(out, formatBitboard, mask[sq][i]);
 			} else {
 				fprintf(out, "_____________________");
 			}
@@ -678,7 +674,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 				fprintf(out, " ");
 			}
 			if (magicCA[sq][i]!=0){
-				fprintf(out, format, magicCA[sq][i]);
+				fprintf(out, formatBitboard, magicCA[sq][i]);
 			} else {
 				fprintf(out, "_____________________");
 			}
@@ -711,7 +707,7 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 					fprintf(out, " ");
 				}
 				if (att[i]!=0){
-					fprintf(out, format, att[i]);
+					fprintf(out, formatBitboard, att[i]);
 				} else {
 					fprintf(out, "_____________________");
 				}

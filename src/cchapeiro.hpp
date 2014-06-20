@@ -7,6 +7,9 @@
 
 #ifndef CCHAPEIRO_HPP_
 #define CCHAPEIRO_HPP_
+#include <atomic>
+#include <cinttypes>
+
 //fixme remove
 #define quiescenceMask (4)
 
@@ -27,20 +30,20 @@
 #include <iostream>
 const std::string ndbgline = "info string Chapeiro Debug : ";
 
-const int maxRookBits = 12;
-const int maxBishopBits = 9;
-const int maxCheckAvoidanceShiftBits = 6;
+constexpr int maxRookBits = 12;
+constexpr int maxBishopBits = 9;
+constexpr int maxCheckAvoidanceShiftBits = 6;
 
-const int minPerftDepth = 1;
-const int maxPerftDepth = 100;
+constexpr int minPerftDepth = 1;
+constexpr int maxPerftDepth = 100;
 
-extern bool interruption_requested;
+extern std::atomic<bool> interruption_requested;
 
 extern bool debugcc;
 //#define std::cout cout << "info string Chapeiro Debug : "
 void debug(std::string);
 #define NoPromotion (-1)
-#define NO_NEXT_TIME_CONTROL (-1)
+#define NO_NEXT_TIME_CONTROL (0)
 #define INF (0x7FFFFFF0)
 #define STARTING_DEPTH (2)
 #define ELAPSED_TIME_FACTOR (2)
@@ -51,8 +54,8 @@ void debug(std::string);
 #define statistics(x)
 #endif
 namespace chapeiro{
-	typedef unsigned long long int bitboard;
-	typedef unsigned long long int zobrist;
+	typedef uint64_t bitboard;
+	typedef uint64_t zobrist;
 }
 
 #define ff_file(x) ((chapeiro::bitboard (0x0101010101010101ull)) << (x))
@@ -62,11 +65,11 @@ namespace chapeiro{
 #define nf_file(x) (~file(x))
 #define nf_rank(x) (~rank(x))
 
-typedef unsigned long long int U64;
+typedef uint64_t U64;
 #ifdef _MSC_VER
 #define formatBitboard "%#018I64Xull"
 #else
-#define formatBitboard "%#018llXull"
+#define formatBitboard ("%#018" PRIX64 "ull")
 #endif
 
 #endif /* CCHAPEIRO_HPP_ */
