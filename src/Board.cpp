@@ -105,8 +105,7 @@ Board::Board(Board * b){
 	halfmoves = b->halfmoves;
 	fullmoves = b->fullmoves;
 	//Memory
-	memcpy(history, b->history, 256*sizeof(*history));
-	interruption_requested = false;
+	memcpy(history, b->history, sizeof(history));
 }
 
 Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, int fenEnPY, int fenHC, int fenFM){
@@ -623,12 +622,14 @@ void Board::go(int maxDepth, time_control tc){
 void Board::stop(){
 	if (searchThread == NULL) return;
 	interruption_requested = true;
+	searchThread->join();
 	delete searchThread;
 	searchThread = NULL;
 }
 
 
 void Board::startSearchTM(int maxDepth, time_control tc){
+	interruption_requested = false;
 	TimeManager<> tm(tc, (playing == white) ? WHITE : BLACK, &interruption_requested);
 
 	int depth = (STARTING_DEPTH < maxDepth) ? STARTING_DEPTH : 1; //STARTING_DEPTH
@@ -637,22 +638,21 @@ void Board::startSearchTM(int maxDepth, time_control tc){
 	int move = 0;
 	int score = 0;
 	int matdcycles = 0;
-	int matmoves = inf;
 	U64 stNodes = nodes;
 	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
-	Board * extrPv = NULL;
-	while (depth <= maxDepth && tm.continue_search(ELAPSED_TIME_FACTOR) && matdcycles < 3){
+	while ((depth <= maxDepth && (!move || tm.continue_search(ELAPSED_TIME_FACTOR)) && matdcycles < 3)){
 		rootDepth = depth;
+		ttPreparePVS(zobr);
 		if (playing == white){
 			score = search<PV, white, true>(alpha, beta, depth);
 		} else {
 			score = search<PV, black, true>(alpha, beta, depth);
 		}
-		tm.search_lap_tick();
 		if (interruption_requested) {
-			ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
+			// ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
 			break; //DO NOT USE THE SCORE RETURNED BY SEARCH!!! IT IS NOT VALID!!!
 		}
+		tm.search_lap_tick();
 		move = getBestMove(zobr);
 		std::chrono::milliseconds etime(tm.getElapsedTime());
 		//Sending Infos
@@ -660,14 +660,14 @@ void Board::startSearchTM(int maxDepth, time_control tc){
 		std::cout << " depth " << depth;
 		std::cout << " time " << etime.count();
 		std::cout << " nodes " << nodes-stNodes;
-		if (etime.count() >= 1000) std::cout << " nps " << (int) (((nodes-stNodes)*1000ull) / (etime / 1000.0).count());
+		if (etime.count() >= 1000) std::cout << " nps " << (U64) (((nodes-stNodes)*1000ull) / (etime / 1000.0).count());
 
-		extrPv = new Board(this);
+		Board * extrPv = new Board(this);
 		std::cout << " pv " << extrPv->extractPV(depth);
 		if (isMat(score)) {
 			std::cout << " score mate ";
 			if (score < 0) std::cout << '-';
-			matmoves = ((Value::MAT - abs(score) - 1)/2) + 1;
+			int matmoves = ((Value::MAT - abs(score) - 1)/2) + 1;
 			std::cout << matmoves;
 			++matdcycles;
 		} else {
@@ -681,7 +681,7 @@ void Board::startSearchTM(int maxDepth, time_control tc){
 		if (debugcc) std::cerr << ndbgline << "Score : " << score << std::endl;
 		++depth;
 	}
-	if (move != 0){
+	if (move){
 		char m[6];
 		std::cout << "bestmove " << moveToString(move, m) << std::endl;
 		if (depth > maxDepth) std::cerr << ndbgline << "Maximum Depth reached!" << std::endl;
@@ -706,7 +706,6 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 	int move = 0;
 	int score = 0;
 	int matdcycles = 0;
-	int matmoves = inf;
 	U64 stNodes = nodes;
 	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
 	Board * extrPv = NULL;
@@ -742,7 +741,7 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 		if (isMat(score)) {
 			std::cout << " score mate ";
 			if (score < 0) std::cout << '-';
-			matmoves = ((Value::MAT - abs(score) - 1)/2) + 1;
+			int matmoves = ((Value::MAT - abs(score) - 1)/2) + 1;
 			std::cout << matmoves;
 			++matdcycles;
 		} else {

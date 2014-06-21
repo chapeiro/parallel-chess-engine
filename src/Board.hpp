@@ -199,7 +199,7 @@ class Board {
 		int fullmoves;
 		bitboard castling;
 		//Memory
-		cache_align Zobrist history[256];
+		Zobrist history[256];
 		int lastHistoryEntry;
 		thread *searchThread;
 		// std::atomic<bool> interruption_requested;
@@ -237,7 +237,7 @@ class Board {
 		void go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
 		void stop();
 
-	private :
+	private:
 		char * moveToString(int move, char* m) const __restrict;
 		/**
 		 * if p is a char representing a white piece,
@@ -445,7 +445,7 @@ inline void Board::prepare_beta_cutoff(int oldhm, bitboard old_enpassant, int en
 template<SearchMode mode, int color, bool root> int Board::search(int alpha, int beta, int depth) __restrict{
 	assert_state();
 	//FIXME This is saved as a betaCutOff later in the TT!
-	if (color==white) if (interruption_requested) return inf; //TODO Revision! does not seem such a good idea :(
+	if (color==white) if (interruption_requested) return INF; //TODO Revision! does not seem such a good idea :(
 	//count nodes searched
 	++nodes;
 	if ((!root) && (mode != Perft) && (mode < quiescenceMask) && (halfmoves >= 100 || threefoldRepetition())) return 0;
@@ -819,8 +819,9 @@ go infinite
 					All_Pieces(color ^ 1) ^= to;
 					Pieces[PAWN | color] ^= from;
 					unsigned long int toSq = square(to);
-					zobr ^= zobrist::keys[captured][toSq];
-					zobr ^= zobrist::keys[PAWN | color][toSq-diff];
+					Zobrist toggle = zobrist::keys[captured][toSq];
+					toggle ^= zobrist::keys[PAWN | color][toSq-diff];
+					zobr ^= toggle;
 					for (int prom = QUEEN | color; prom > (PAWN | colormask) ; prom -= 2){
 						Pieces[prom] ^= to;
 						pieceScore += Value::piece[prom];
@@ -831,8 +832,7 @@ go infinite
 						Pieces[prom] ^= to;
 						if( score >= beta ) {
 							Pieces[captured] ^= to;
-							zobr ^= zobrist::keys[captured][toSq];
-							zobr ^= zobrist::keys[PAWN | color][toSq-diff];
+							zobr ^= toggle;
 							Pieces[PAWN | color] ^= from;
 							All_Pieces(color) ^= tf;
 							All_Pieces(color ^ 1) ^= to;
@@ -850,8 +850,7 @@ go infinite
 							bestProm = prom;
 						}
 					}
-					zobr ^= zobrist::keys[captured][toSq];
-					zobr ^= zobrist::keys[PAWN | color][toSq-diff];
+					zobr ^= toggle;
 					Pieces[captured] ^= to;
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
@@ -1016,26 +1015,31 @@ go infinite
 #else
 #define SIZE 16
 #endif
-		bitboard attack[SIZE], frombb[SIZE];
-		unsigned long int piecet[SIZE], fromSq[SIZE], n(0);
+		struct move_data{
+			//bitboard frombb;
+			bitboard attack;
+			unsigned int fromSq;
+			unsigned int piecet;
+		} dt[SIZE];
+		static_assert(sizeof(move_data) == 128/8, "move_data size");
+		unsigned long int n(0);
 #undef SIZE
 		bitboard KAttack = KingMoves[kingSq];
 		unsigned long int firstRook, firstQueen;
 		{ 												//TargetSquareGenerator:
-			int dr;
 			bitboard tmp = Pieces[KNIGHT | color];
 			//TODO Only knights that are not pinned can move, so tmp's population is predictable from here
 			while (tmp){
 				bitboard xRay;
-				frombb[n] = pop_lsb(tmp);
-				fromSq[n] = square(frombb[n]);
-				dr = direction[kingSq][fromSq[n]];
+				bitboard frombb = pop_lsb(tmp);
+				dt[n].fromSq = square(frombb);
+				int dr = direction[kingSq][dt[n].fromSq];
 				//A pinned knight has no legal moves.
-				if (dr == WRONG_PIECE || (rays[kingSq][fromSq[n]] & occ) != 0 ||
-						(((xRay = getChecker<color>(occ, fromSq[n], kingSq)) & Pieces[QUEEN | (color ^ 1)]) == 0
+				if (dr == WRONG_PIECE || (rays[kingSq][dt[n].fromSq] & occ) != 0 ||
+						(((xRay = getChecker<color>(occ, dt[n].fromSq, kingSq)) & Pieces[QUEEN | (color ^ 1)]) == 0
 								&& (xRay & Pieces[dr | (color ^ 1)]) == 0)) {
-					attack[n] = KnightMoves[fromSq[n]];
-					piecet[n] = KNIGHT | color;
+					dt[n].attack = KnightMoves[dt[n].fromSq];
+					dt[n].piecet = KNIGHT | color;
 					++n;
 				}
 			}
@@ -1045,31 +1049,31 @@ go infinite
 			//the pinner will be capturable by the pinned piece!
 			tmp = Pieces[BISHOP | color];
 			while (tmp){
-				frombb[n] = pop_lsb(tmp);
-				fromSq[n] = square(frombb[n]);
-				attack[n] = bishopAttacks(occ, fromSq[n]);
-				piecet[n] = BISHOP | color;
-				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
+				bitboard frombb = pop_lsb(tmp);
+				dt[n].fromSq = square(frombb);
+				dt[n].attack = bishopAttacks(occ, dt[n].fromSq);
+				dt[n].piecet = BISHOP | color;
+				filterAttackBB<color>(occ, dt[n].fromSq, dt[n].attack, kingSq);
 				++n;
 			}
 			firstRook = n;
 			tmp = Pieces[ROOK | color];
 			while (tmp){
-				frombb[n] = pop_lsb(tmp);
-				fromSq[n] = square(frombb[n]);
-				attack[n] = rookAttacks(occ, fromSq[n]);
-				piecet[n] = ROOK | color;
-				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
+				bitboard frombb = pop_lsb(tmp);
+				dt[n].fromSq = square(frombb);
+				dt[n].attack = rookAttacks(occ, dt[n].fromSq);
+				dt[n].piecet = ROOK | color;
+				filterAttackBB<color>(occ, dt[n].fromSq, dt[n].attack, kingSq);
 				++n;
 			}
 			firstQueen = n;
 			tmp = Pieces[QUEEN | color];
 			while (tmp){
-				frombb[n] = pop_lsb(tmp);
-				fromSq[n] = square(frombb[n]);
-				attack[n] = queenAttacks(occ, fromSq[n]);
-				piecet[n] = QUEEN | color;
-				filterAttackBB<color>(occ, fromSq[n], attack[n], kingSq);
+				bitboard frombb = pop_lsb(tmp);
+				dt[n].fromSq = square(frombb);
+				dt[n].attack = queenAttacks(occ, dt[n].fromSq);
+				dt[n].piecet = QUEEN | color;
+				filterAttackBB<color>(occ, dt[n].fromSq, dt[n].attack, kingSq);
 				++n;
 			}
 		}
@@ -1081,23 +1085,24 @@ go infinite
 			for (int captured = QUEEN | (color ^ 1) ; captured >= 0 ; captured -= 2){
 				pieceScore -= Value::piece[captured];
 				for (unsigned long int i = 0 ; i < n ; ++i) {
-					bitboard tmp = Pieces[captured] & attack[i];
+					bitboard tmp = Pieces[captured] & dt[i].attack;
+					unsigned int fromSq = dt[i].fromSq;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
-						bitboard tf = to | frombb[i];
+						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[captured][toSq];
-						toggle ^= zobrist::keys[piecet[i]][toSq];
-						toggle ^= zobrist::keys[piecet[i]][fromSq[i]];
+						toggle ^= zobrist::keys[dt[i].piecet][toSq];
+						toggle ^= zobrist::keys[dt[i].piecet][fromSq];
 						Pieces[captured] ^= to;
-						Pieces[piecet[i]] ^= tf;
+						Pieces[dt[i].piecet] ^= tf;
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[captured] ^= to;
-						Pieces[piecet[i]] ^= tf;
+						Pieces[dt[i].piecet] ^= tf;
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
 						if( score >= beta ) {
@@ -1156,19 +1161,20 @@ go infinite
 			if (mode < quiescenceMask){
 				halfmoves = oldhm + 1;
 				for (unsigned long int i = 0 ; i < n ; ++i) {
-					bitboard tmp = attack[i] & empty;
+					bitboard tmp = dt[i].attack & empty;
+					unsigned int fromSq = dt[i].fromSq;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
-						bitboard tf = to | frombb[i];
+						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[piecet[i]][toSq];
-						toggle ^= zobrist::keys[piecet[i]][fromSq[i]];
+						Zobrist toggle = zobrist::keys[dt[i].piecet][toSq];
+						toggle ^= zobrist::keys[dt[i].piecet][fromSq];
 						All_Pieces(color) ^= tf;
-						Pieces[piecet[i]] ^= tf;
+						Pieces[dt[i].piecet] ^= tf;
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
-						Pieces[piecet[i]] ^= tf;
+						Pieces[dt[i].piecet] ^= tf;
 						All_Pieces(color) ^= tf;
 						if( score >= beta ) {
 							prepare_beta_cutoff<mode, color>(oldhm, tmpEnPassant, enSq, depth, getMove<color>(tf, 0), beta);
@@ -1219,23 +1225,24 @@ go infinite
 			for (int captured = QUEEN | (color ^ 1); captured >= 0 ; captured -= 2){
 				pieceScore -= Value::piece[captured];
 				for (i = 0; i < firstRook ; ++i) {
-					bitboard tmp = Pieces[captured] & attack[i];
+					bitboard tmp = Pieces[captured] & dt[i].attack;
+					unsigned int fromSq = dt[i].fromSq;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
-						bitboard tf = to | frombb[i];
+						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[captured][toSq];
-						toggle ^= zobrist::keys[piecet[i]][toSq];
-						toggle ^= zobrist::keys[piecet[i]][fromSq[i]];
+						toggle ^= zobrist::keys[dt[i].piecet][toSq];
+						toggle ^= zobrist::keys[dt[i].piecet][fromSq];
 						Pieces[captured] ^= to;
-						Pieces[piecet[i]] ^= tf;
+						Pieces[dt[i].piecet] ^= tf;
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[captured] ^= to;
-						Pieces[piecet[i]] ^= tf;
+						Pieces[dt[i].piecet] ^= tf;
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
 						if( score >= beta ) {
@@ -1253,17 +1260,18 @@ go infinite
 				}
 				zobr ^= ct;
 				for ( ; i < firstQueen ; ++i){
-					castling &= ~frombb[i];
+					unsigned int fromSq = dt[i].fromSq;
+					castling &= ~(UINT64_C(1) << fromSq);
 					ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
 					zobr ^= ct2;
-					bitboard tmp = Pieces[captured] & attack[i];
+					bitboard tmp = Pieces[captured] & dt[i].attack;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
-						bitboard tf = to | frombb[i];
+						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[captured][toSq];
 						toggle ^= zobrist::keys[ROOK | color][toSq];
-						toggle ^= zobrist::keys[ROOK | color][fromSq[i]];
+						toggle ^= zobrist::keys[ROOK | color][fromSq];
 						Pieces[captured] ^= to;
 						Pieces[ROOK | color] ^= tf;
 						All_Pieces(color) ^= tf;
@@ -1295,14 +1303,15 @@ go infinite
 				}
 				zobr ^= ct;
 				for (; i < n ; ++i) {
-					bitboard tmp = Pieces[captured] & attack[i];
+					unsigned int fromSq = dt[i].fromSq;
+					bitboard tmp = Pieces[captured] & dt[i].attack;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
-						bitboard tf = to | frombb[i];
+						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[captured][toSq];
 						toggle ^= zobrist::keys[QUEEN | color][toSq];
-						toggle ^= zobrist::keys[QUEEN | color][fromSq[i]];
+						toggle ^= zobrist::keys[QUEEN | color][fromSq];
 						Pieces[captured] ^= to;
 						Pieces[QUEEN | color] ^= tf;
 						All_Pieces(color) ^= tf;
@@ -1447,19 +1456,20 @@ go infinite
 				}
 
 				for (i = 0; i < firstRook ; ++i) {
-					bitboard tmp = attack[i] & empty;
+					unsigned int fromSq = dt[i].fromSq;
+					bitboard tmp = dt[i].attack & empty;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
-						bitboard tf = to | frombb[i];
+						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[piecet[i]][toSq];
-						toggle ^= zobrist::keys[piecet[i]][fromSq[i]];
+						Zobrist toggle = zobrist::keys[dt[i].piecet][toSq];
+						toggle ^= zobrist::keys[dt[i].piecet][fromSq];
 						All_Pieces(color) ^= tf;
-						Pieces[piecet[i]] ^= tf;
+						Pieces[dt[i].piecet] ^= tf;
 						zobr ^= toggle;
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
-						Pieces[piecet[i]] ^= tf;
+						Pieces[dt[i].piecet] ^= tf;
 						All_Pieces(color) ^= tf;
 						if( score >= beta ) {
 							prepare_beta_cutoff<mode, color>(oldhm, tmpEnPassant, enSq, depth, getMove<color>(tf, 0), beta);
@@ -1474,16 +1484,17 @@ go infinite
 				}
 				zobr ^= ct;
 				for (; i < firstQueen ; ++i) {
-					castling &= ~frombb[i];
+					unsigned int fromSq = dt[i].fromSq;
+					castling &= ~(UINT64_C(1) << fromSq);
 					ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
 					zobr ^= ct2;
-					bitboard tmp = attack[i] & empty;
+					bitboard tmp = dt[i].attack & empty;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
-						bitboard tf = to | frombb[i];
+						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[ROOK | color][toSq];
-						toggle ^= zobrist::keys[ROOK | color][fromSq[i]];
+						toggle ^= zobrist::keys[ROOK | color][fromSq];
 						All_Pieces(color) ^= tf;
 						Pieces[ROOK | color] ^= tf;
 						zobr ^= toggle;
@@ -1510,13 +1521,14 @@ go infinite
 				}
 				zobr ^= ct;
 				for (; i < n ; ++i) {
-					bitboard tmp = attack[i] & empty;
+					unsigned int fromSq = dt[i].fromSq;
+					bitboard tmp = dt[i].attack & empty;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
-						bitboard tf = to | frombb[i];
+						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[QUEEN | color][toSq];
-						toggle ^= zobrist::keys[QUEEN | color][fromSq[i]];
+						toggle ^= zobrist::keys[QUEEN | color][fromSq];
 						All_Pieces(color) ^= tf;
 						Pieces[QUEEN | color] ^= tf;
 						zobr ^= toggle;
@@ -1664,7 +1676,7 @@ go infinite
 			//1) Capturing the attacking piece
 			unsigned long int toSq = square(checkedBy);
 			int attacker = QUEEN | (color ^ 1);
-			while ((Pieces[attacker] & checkedBy)==0) attacker -= 2;
+			while (!(Pieces[attacker] & checkedBy)) attacker -= 2;
 			zobr ^= zobrist::keys[attacker][toSq];
 			Pieces[attacker] ^= checkedBy;
 			All_Pieces(color ^ 1) ^= checkedBy;
@@ -2709,9 +2721,9 @@ constexpr bitboard Board::bishopAttacks(bitboard occ, const int sq){
 // #endif
 // 	return BishopAttacks[sq][occ];
 #ifndef fixedShift
-	return BishopAttacks[sq][((occ & BishopMask[sq]) * BishopMagic[sq]) >> BishopShift[sq]];
+	return BishopAttacks[sq][((occ & BishopData[sq].mask) * BishopData[sq].magic) >> BishopShift[sq]];
 #else
-	return BishopAttacks[sq][((occ & BishopMask[sq]) * BishopMagic[sq]) >> (64-maxBishopBits)];
+	return BishopAttacks[sq][((occ & BishopData[sq].mask) * BishopData[sq].magic) >> (64-maxBishopBits)];
 #endif
 }
 
@@ -2725,9 +2737,9 @@ constexpr bitboard Board::rookAttacks(bitboard occ, const int sq){
 // #endif
 // 	return RookAttacks[sq][occ];
 #ifndef fixedShift
-	return RookAttacks[sq][((occ & RookMask[sq]) * RookMagic[sq]) >> RookShift[sq]];
+	return RookAttacks[sq][((occ & RookData[sq].mask) * RookData[sq].magic) >> RookShift[sq]];
 #else
-	return RookAttacks[sq][((occ & RookMask[sq]) * RookMagic[sq]) >> (64-maxRookBits)];
+	return RookAttacks[sq][((occ & RookData[sq].mask) * RookData[sq].magic) >> (64-maxRookBits)];
 #endif
 }
 

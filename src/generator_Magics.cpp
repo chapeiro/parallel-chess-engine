@@ -343,7 +343,15 @@ void generate(const int bits[64], bool rook, int a, bitboard magicl[64], FILE* o
 #else
 		magicl[square] = generateMagics(square, a, rook);
 #endif
+		fprintf(out, "{");
 		fprintf(out, formatBitboard, magicl[square]);
+		fprintf(out, ", ");
+		if (rook){
+			fprintf(out, formatBitboard, rookMask(1ULL << square));
+		} else {
+			fprintf(out, formatBitboard, bishopMask(1ULL << square));
+		}
+		fprintf(out, "}");
 		if (square != 63) fprintf(out, ",");
 		fprintf(out, "\t//square : %02i\n", square);
 	}
@@ -412,34 +420,37 @@ void MagicGenerator(int maxBitsRook, int maxBitsBishop, int maxCheckAvoidanceShi
 	fprintf(out, "#define PRECOMPD_MAGICS_HPP_\n\n");
 	fprintf(out, "#include \"cchapeiro.hpp\"\n");
 	fprintf(out, "typedef chapeiro::bitboard bitboard;\n\n");
-	fprintf(out, "cache_align constexpr bitboard RookMagic[64] = {\n");
+	fprintf(out, "struct magic_mask{\n");
+	fprintf(out, "\tbitboard magic, mask;\n");
+	fprintf(out, "};\n\n");
+	fprintf(out, "cache_align constexpr magic_mask RookData[64] = {\n");
 	generate(RookBits, true, maxBitsRook, RookMagicCalc, out);
 	fprintf(out, "};\n\n");
-	fprintf(out, "cache_align constexpr bitboard BishopMagic[64] = {\n");
+	fprintf(out, "cache_align constexpr magic_mask BishopData[64] = {\n");
 	generate(BishopBits, false, maxBitsBishop, BishopMagicCalc, out);
 	fprintf(out, "};\n\n");
-	fprintf(out, "cache_align constexpr bitboard RookMask[64] = {");
-	for (int i = 0; i < 64 ; ++i) {
-		if (i%8==0) {
-			fprintf(out, "\n\t");
-		} else {
-			fprintf(out, " ");
-		}
-		fprintf(out, formatBitboard, rookMask(1ULL << i));
-		if (i != 63) fprintf(out, ",");
-	}
-	fprintf(out, "\n};\n\n");
-	fprintf(out, "cache_align constexpr bitboard BishopMask[64] = {");
-	for (int i = 0; i < 64 ; ++i) {
-		if (i%8==0) {
-			fprintf(out, "\n\t");
-		} else {
-			fprintf(out, " ");
-		}
-		fprintf(out, formatBitboard, bishopMask(1ULL << i));
-		if (i != 63) fprintf(out, ",");
-	}
-	fprintf(out, "\n};\n\n");
+	// fprintf(out, "cache_align constexpr bitboard RookMask[64] = {");
+	// for (int i = 0; i < 64 ; ++i) {
+	// 	if (i%8==0) {
+	// 		fprintf(out, "\n\t");
+	// 	} else {
+	// 		fprintf(out, " ");
+	// 	}
+	// 	fprintf(out, formatBitboard, rookMask(1ULL << i));
+	// 	if (i != 63) fprintf(out, ",");
+	// }
+	// fprintf(out, "\n};\n\n");
+	// fprintf(out, "cache_align constexpr bitboard BishopMask[64] = {");
+	// for (int i = 0; i < 64 ; ++i) {
+	// 	if (i%8==0) {
+	// 		fprintf(out, "\n\t");
+	// 	} else {
+	// 		fprintf(out, " ");
+	// 	}
+	// 	fprintf(out, formatBitboard, bishopMask(1ULL << i));
+	// 	if (i != 63) fprintf(out, ",");
+	// }
+	// fprintf(out, "\n};\n\n");
 #ifndef fixedShift
 	fprintf(out, "cache_align constexpr int RookShift[64] = {");
 	for (int i = 0; i < 64 ; ++i) {

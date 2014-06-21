@@ -12,42 +12,44 @@
 #include <regex>
 #include "uciProtocol.hpp"
 #include "../TranspositionTable.hpp"
+#include "../BoardInterface/BareBoardInterface.hpp"
+#include "../BoardInterface/BoardInterface.hpp"
 
 using namespace std;
 
-void help(UCI_command com){
-	cout << '\"' << UCI_commandFormat[com] << "\" : " << endl;
+void help(UCI_command com, ostream &out){
+	out << '\"' << UCI_commandFormat[com] << "\" : " << endl;
 	switch(com){
 	case UCI_uci :
-		cout << "\tTell engine to use the uci (universal chess interface)" << endl;
+		out << "\tTell engine to use the uci (universal chess interface)" << endl;
 		break;
 	case UCI_debug :
-		cout << "\tSwitch the debug mode of the engine on and off." << endl;
-		cout << "\tIn debug mode the engine should send additional infos using the \"info string\" command,";
-			cout << " to help debugging." << endl;
-		cout << "\tThis mode should is switched off by default." << endl;
-		cout << "\t(this command can be sent at any time, even while the engine is thinking.)" << endl;
+		out << "\tSwitch the debug mode of the engine on and off." << endl;
+		out << "\tIn debug mode the engine should send additional infos using the \"info string\" command,";
+			out << " to help debugging." << endl;
+		out << "\tThis mode should is switched off by default." << endl;
+		out << "\t(this command can be sent at any time, even while the engine is thinking.)" << endl;
 		break;
 	case UCI_isready :
-		cout << "\tThis is used to synchronize the engine." << endl;
-		cout << "\tThis command can be used to wait for the engine to be ready again";
-			cout << " or to ping the engine to find out if it is still alive." << endl;
-		cout << "\tThis command will always be answered with \"readyok\"";
-			cout << " and can be sent also when the engine is calculating";
-			cout << " in which case the engine should also immediately answer";
-			cout << " without stopping the search." << endl;
+		out << "\tThis is used to synchronize the engine." << endl;
+		out << "\tThis command can be used to wait for the engine to be ready again";
+			out << " or to ping the engine to find out if it is still alive." << endl;
+		out << "\tThis command will always be answered with \"readyok\"";
+			out << " and can be sent also when the engine is calculating";
+			out << " in which case the engine should also immediately answer";
+			out << " without stopping the search." << endl;
 		break;
 	case UCI_position :
-		cout << "\tSets up the position described in <fenstring> on the internal board";
-			cout << " and plays the moves on the internal chess board." << endl;
-		cout << "\tIf the game was played from the start position the string \"startpos\" can be sent." << endl;
+		out << "\tSets up the position described in <fenstring> on the internal board";
+			out << " and plays the moves on the internal chess board." << endl;
+		out << "\tIf the game was played from the start position the string \"startpos\" can be sent." << endl;
 		break;
 	case UCI_newGame :
-		cout << "\tthis is sent to the engine when the next search";
-		cout << "will be from a different game." << endl;
+		out << "\tthis is sent to the engine when the next search";
+		out << "will be from a different game." << endl;
 		break;
 	case UCI_quit :
-		cout << "\tQuits the program as soon as possible." << endl;
+		out << "\tQuits the program as soon as possible." << endl;
 		break;
 	}
 }
@@ -56,15 +58,6 @@ bool initializeEngine(){
 	Board::initialize();
 	return true;
 }
-
-constexpr char UCI_go_infinite[]  =  "infinite";
-constexpr char UCI_go_depth[]     =     "depth";
-constexpr char UCI_go_movetime[]  =  "movetime";
-constexpr char UCI_go_movestogo[] = "movestogo";
-constexpr char UCI_go_wtime[]     =     "wtime";
-constexpr char UCI_go_btime[]     =     "btime";
-constexpr char UCI_go_winc[]      =      "winc";
-constexpr char UCI_go_binc[]      =      "binc";
 
 std::pair<int, time_control> getTimeControl(string t){
 	stringstream inp(t);
@@ -129,7 +122,7 @@ int uci(){
 	//cout << "option name Hash type spin default 1 min 1 max 512" << endl;
 	cout << "uciok" << endl;
 	bool initialized = false;
-	Board* board = NULL;
+	BareBoardInterface board_interface;
 	string input;
 	do {
 		getline(cin, input);
@@ -142,19 +135,18 @@ int uci(){
 				continue;
 			}
 			int b(-1);
-			if (board) delete board;
 			if (input.find("startpos")!=string::npos){
-				board = new Board();
+				board_interface.setBoard();
 				sscanf(input.c_str(), "position startpos%n", &b);
 			} else {
-				int a (-1);
+				int a(-1);
 				sscanf(input.c_str(), "position fen %n%*s %*c %*s %*s %*d %*d%n", &a, &b);
 				if (a < 0 || b < 0) {
 					help(UCI_position);
 					continue;
 				}
 				try {
-					board = Board::createBoard(input.substr(a, b).c_str());
+					board_interface.setBoard(input.substr(a, b));
 				} catch (exception* e) {
 					cerr << e->what() << endl;
 					continue;
@@ -166,10 +158,10 @@ int uci(){
 				char m[6];
 				while (sscanf(input.c_str(), " %5s%n", m, &b) >= 1){
 					input.erase(0, b);
-					board->make(chapeiro::convertUCImove(m));
+					board_interface.makeMove(chapeiro::convertUCImove(m));
 				}
 			}
-			board->print();
+			board_interface.printBoard();
 		/**} else if (input.find("setoption name ")!=string::npos){
 			input.erase(0, 15);
 			if (input.find("Hash value ")!=string::npos){
@@ -188,20 +180,17 @@ int uci(){
 				help(UCI_debug);
 			}
 		} else if (input.find("ucinewgame")!=string::npos){
-			delete board;
-			ttNewGame();
-			board = NULL;
+			board_interface.newGame();
 		} else if (input.find("go")==0){
 			input.erase(0, 2);
-			if (!board){
-				cerr << "Unknown position! Search can not start. Use position command." << endl;
-				ttNewGame();
-				board = new Board();
-			}
 			std::pair<int, time_control> p(getTimeControl(input));
-			board->go(p.first, p.second);
+			if (!board_interface.go(p.first, p.second)){
+				cerr << "Unknown position! Search can not start. " << endl;
+				cerr << "Use position command." << endl;
+				help(UCI_position, cerr);
+			}
 		} else if (input.find("stop")!=string::npos){
-			if (board) board->stop();
+			board_interface.stop();
 #ifdef STATS
 		} else if (input.compare("stats") == 0){
 			U64 ttHits = (ttaccesses - ttmisses);

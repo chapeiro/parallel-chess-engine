@@ -36,3 +36,14 @@ void ttNewGame(){
 		//}
 	}
 }
+
+void ttPreparePVS(chapeiro::zobrist zobr){
+	int index = getTTIndex(zobr);
+	ttEntry * entry = transpositionTable + index;
+	U64 zobrXD = entry->zobrXORdata;
+	U64 data   = entry->data;
+	if (data == U64(0)) return;
+	if ((zobrXD ^ data) == zobr) return;
+	entry->data        = U64(0);
+	entry->zobrXORdata = U64(0);
+}

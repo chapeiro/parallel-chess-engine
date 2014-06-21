@@ -8,6 +8,7 @@
 #ifndef UCIPROTOCOL_HPP_
 #define UCIPROTOCOL_HPP_
 #include <string>
+#include <iostream>
 
 enum UCI_command {
 	UCI_uci = 0,
@@ -27,7 +28,16 @@ const std::string UCI_commandFormat[] = {
 	"quit"
 };
 
-void help(UCI_command com);
+constexpr char UCI_go_infinite[]  =  "infinite";
+constexpr char UCI_go_depth[]     =     "depth";
+constexpr char UCI_go_movetime[]  =  "movetime";
+constexpr char UCI_go_movestogo[] = "movestogo";
+constexpr char UCI_go_wtime[]     =     "wtime";
+constexpr char UCI_go_btime[]     =     "btime";
+constexpr char UCI_go_winc[]      =      "winc";
+constexpr char UCI_go_binc[]      =      "binc";
+
+void help(UCI_command com, std::ostream &out = std::cout);
 bool initializeEngine();
 int uci();
 

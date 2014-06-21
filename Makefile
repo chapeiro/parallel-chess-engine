@@ -1,11 +1,11 @@
 # DEBUG=1
 # PROFILE=1
 
-DEBUGFLAGS= -g3 -pg 
+DEBUGFLAGS= -g3 -pg -ggdb 
 DEBUGFLAGS+= -funsafe-loop-optimizations
 DEBUGFLAGS+= -Wunsafe-loop-optimizations
 
-TFLAGS= -O3 -g3 -pg 
+TFLAGS= -O3 
 TFLAGS+= -finline 
 TFLAGS+= -march=native
 TFLAGS+= -fmerge-all-constants

@@ -101,7 +101,9 @@ public:
     }
 
     void search_lap_tick(){
+        std::lock_guard<std::mutex> lk(m);
         search_lap = Clk::now();
+        cv.notify_all();
     }
 
     std::chrono::milliseconds getElapsedTime(){
@@ -119,6 +121,7 @@ private:
         std::unique_lock<std::mutex> lk(m);
         alarm_state = 1;
         cv.notify_all();
+        cv.wait(lk, [this](){return search_lap > search_start;}); //do not alarm before searching first depth!!!
         cv.wait_until(lk, search_end, [this](){return this->alarm_state > 1;});
         if (interrupt_flag) *interrupt_flag = true;
         lk.unlock();
