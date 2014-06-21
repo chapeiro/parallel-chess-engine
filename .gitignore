@@ -1,12 +1,36 @@
+# GitEye Files
 .cproject
 .project
-.settings/
-.metadata/
+
+# Object Files
+*.o
+
+# Sublime files
+*.sublime-project
+*.sublime-workspace
+
+# Non-Archive Executables
+bin
+
+# Eclipse files
+.settings
+.metadata
+
+# Dependency Files
+.depend
+
+# Data Archives
 *.7z*
-Alternatives/
-Back Up/
-Debug/
-Release/
-Tools/
+
+# Uncommited Alternatives
+Alternatives
+
+# Tools
+Tools
+
+# Performance Profiles
 *.sleepy
 *.at
+
+# Back Ups
+Back Up
