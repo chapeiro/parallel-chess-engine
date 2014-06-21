@@ -1,0 +1,12 @@
+.cproject
+.project
+.settings/
+.metadata/
+*.7z*
+Alternatives/
+Back Up/
+Debug/
+Release/
+Tools/
+*.sleepy
+*.at
