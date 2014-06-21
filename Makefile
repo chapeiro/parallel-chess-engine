@@ -5,7 +5,7 @@ DEBUGFLAGS= -g3 -pg
 DEBUGFLAGS+= -funsafe-loop-optimizations
 DEBUGFLAGS+= -Wunsafe-loop-optimizations
 
-TFLAGS= -O3 
+TFLAGS= -O3 -g3 -pg 
 TFLAGS+= -finline 
 TFLAGS+= -march=native
 TFLAGS+= -fmerge-all-constants
@@ -160,7 +160,7 @@ $(BIN_DBG)cchapeiro:$(addprefix $(OBJ_DBG), $(CXX_OBJECTS))
 release: $(BIN_RLS)cchapeiro
 debug:   $(BIN_DBG)cchapeiro
 
-.PHONY: all debug release
+.PHONY: all debug release 
 
 space= 
 #do no remove this lines!!! needed!!!
@@ -168,6 +168,9 @@ space+=
 
 vpath %.o $(subst $(space),:,$(dir $(OBJ_FILES)))
 vpath %.cpp $(subst $(space),:,$(dir $(CXX_SOURCESD)))
+
+%.dir:
+	mkdir -p $(@D)
 
 %.o: 
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(subst $(OBJ_DIR),$(SRC_ROOT)/,$(@:.o=.cpp)) -o $@
@@ -178,13 +181,13 @@ vpath %.cpp $(subst $(space),:,$(dir $(CXX_SOURCESD)))
 clean:
 	-rm -r $(OBJ_ROOT) $(BIN_ROOT) $(DEP_ROOT)
 	mkdir -p $(BIN_DBG) $(BIN_RLS) $(OBJ_DBG) $(OBJ_RLS) $(DEP_DBG) $(DEP_RLS)
-	mkdir -p $(subst //,/,$(dir $(OBJ_FILES)))
+	# mkdir -p $(subst //,/,$(dir $(OBJ_FILES)))
 
 $(DEP_DBG)%.d: %.cpp Makefile
 	@mkdir -p $(@D)
-	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ODD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DDD)$(subst /,\/,$(<:.cpp=.d)): Makefile\\\n/g' > $@
+	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ODD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DDD)$(subst /,\/,$(<:.cpp=.d)): \\\nMakefile $(SED_ODD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.dir)))\\\n/g' > $@
 
 $(DEP_RLS)%.d: %.cpp Makefile
 	@mkdir -p $(@D)
-	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ORD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DRD)$(subst /,\/,$(<:.cpp=.d)): Makefile\\\n/g' > $@
+	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ORD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DRD)$(subst /,\/,$(<:.cpp=.d)): \\\nMakefile $(SED_ORD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.dir)))\\\n/g' > $@
 
