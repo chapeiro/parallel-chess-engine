@@ -75,6 +75,14 @@ typedef uint64_t U64;
 #define formatBitboard ("%#018" PRIX64 "ull")
 #endif
 
+enum color{
+    WHITE = 0,
+    BLACK = 1
+};
+
+constexpr color operator!(color c){
+    return static_cast<color>(c ^ 1);
+}
 int communaticate();
 
 #endif /* CCHAPEIRO_HPP_ */

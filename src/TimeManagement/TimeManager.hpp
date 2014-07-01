@@ -14,11 +14,6 @@
 #include <atomic>
 #include "../cchapeiro.hpp"
 
-enum color{
-    WHITE = 0,
-    BLACK = 1
-};
-
 constexpr color toggle(const color a){
     return static_cast<color>(a ^ 1);
 }
