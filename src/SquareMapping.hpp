@@ -25,20 +25,29 @@ inline int rank(const int &index){
 
 #ifdef _MSC_VER
     #include <intrin.h>
-	inline unsigned long int square(bitboard bb){
+	inline unsigned int square(bitboard bb){
 		unsigned long int index;
 		_BitScanForward64(&index, bb);
 		return index;
 	}
 #else
-	inline unsigned long int square(bitboard bb){
+	inline unsigned int square(unsigned long long int bb){
 		return __builtin_ctzll(bb);
+//		return magictable[(b*magic) >> 58];
+	}
+	inline unsigned int square(unsigned long int bb){
+		return __builtin_ctzl(bb);
+//		return magictable[(b*magic) >> 58];
+	}
+	inline unsigned int square(unsigned int bb){
+		return __builtin_ctz(bb);
 //		return magictable[(b*magic) >> 58];
 	}
 #endif
 
-inline bitboard pop_lsb(bitboard &bb){
-	bitboard tmp = bb & -bb;
+template<typename T>
+inline T pop_lsb(T &bb){
+	T tmp = bb & -bb;
 	bb ^= tmp;
 	return tmp;
 }

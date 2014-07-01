@@ -34,3 +34,15 @@ Tools
 
 # Back Ups
 Back Up
+
+# Game Archives
+*.pgn
+
+# Todo Files
+*.do
+
+# Log Files
+*.log
+
+# ICS Files
+.icsrs

@@ -21,7 +21,8 @@
 #define CACHE_ALIGN __attribute__((aligned(CACHE_LINE)))
 #endif
 #endif
-#define cache_align CACHE_ALIGN
+// #define cache_align CACHE_ALIGN
+#define cache_align alignas(CACHE_LINE)
 
 #include <string>
 
@@ -48,6 +49,8 @@ void debug(std::string);
 #define STARTING_DEPTH (2)
 #define ELAPSED_TIME_FACTOR (2)
 
+constexpr unsigned int MAX_BOARDS(128);
+
 #ifdef STATS
 #define statistics(x) x
 #else
@@ -71,5 +74,7 @@ typedef uint64_t U64;
 #else
 #define formatBitboard ("%#018" PRIX64 "ull")
 #endif
+
+int communaticate();
 
 #endif /* CCHAPEIRO_HPP_ */

@@ -11,12 +11,13 @@
 #include <iostream>
 
 enum UCI_command {
-	UCI_uci = 0,
-	UCI_debug = 1,
-	UCI_isready = 2,
-	UCI_newGame = 3,
-	UCI_position = 4,
-	UCI_quit = 5
+	UCI_uci       	= 0,
+	UCI_debug       = 1,
+	UCI_isready     = 2,
+	UCI_newGame     = 3,
+	UCI_position    = 4,
+	UCI_quit        = 5,
+	UCI_stop        = 6
 };
 
 const std::string UCI_commandFormat[] = {

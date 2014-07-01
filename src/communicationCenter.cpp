@@ -11,9 +11,13 @@
 #include <string>
 #include "testCChapeiro.hpp"
 #include "CommunicationProtocols/uciProtocol.hpp"
+#include "BoardInterface/BoardInterface.hpp"
+#include "Parallel/ThreadBoardInterface.hpp"
 #include <cstdio>
 using namespace std;
 bool debugcc = false;
+
+BoardInterface* board_interface = NULL;
 
 /**void signEndOfFile(string reason){
 	char ct[20];
@@ -36,7 +40,7 @@ void signFile(){
 	std::cout << "################# DEBUG INFO #################\n";
 }**/
 
-int main(){
+int communaticate(){
 	//if (debugcc) signFile();
 	char modec[256];
 	string mode;
@@ -152,4 +156,10 @@ int main(){
 
 void debug(string a){
 	std::cout << ndbgline << a << '\n';
+}
+
+int main(){
+	board_interface = new ThreadBoardInterface(true);
+	((ThreadBoardInterface* ) board_interface)->block();
+	return 0;//communaticate();
 }

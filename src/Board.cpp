@@ -14,6 +14,11 @@
 #include <ctime>
 #include <atomic>
 
+Board Board::bmem[MAX_BOARDS];
+std::mutex Board::bmem_m;
+unsigned int Board::bmem_unused[MAX_BOARDS];
+unsigned int Board::bmem_unused_last = MAX_BOARDS << 1;
+
 const int Value::piece[12] = {100,
 							 -100,
 							  320,
@@ -90,11 +95,10 @@ Board* Board::createBoard(const char FEN[]) {
 	return new Board(fenBoard, fenPlaying, fenCastling, fenEnPX, fenEnPY, fenHC, fenFM);
 }
 
-Board::Board(Board * b){
+Board::Board(Board * __restrict b){
 	for (int i = 0 ; i < PIECESMAX ; ++i) Pieces[i] = b->Pieces[i];
 	White_Pieces = b->White_Pieces;
 	Black_Pieces = b->Black_Pieces;
-	searchThread = NULL;
 	castling = b->castling;
 	zobr = b->zobr;
 	lastHistoryEntry = b->lastHistoryEntry;
@@ -112,7 +116,6 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 	//General initialize
 	for (int i = 0 ; i < PIECESMAX ; ++i) Pieces[i] = bitboard(0);
 	All_Pieces(white) = All_Pieces(black) = bitboard(0);
-	searchThread = NULL;
 	castling = 0;
 	zobr = 0;
 	lastHistoryEntry = -1;
@@ -219,7 +222,7 @@ void Board::capture(int to) __restrict{
  * ATTENTION!: move m has to be LEGAL (or null move)
  */
 void Board::make(chapeiro::move m){
-	//FIXME
+	//FIXME fic
 	if (chapeiro::moveIsNull(m)){
 		togglePlaying();
 		return;
@@ -611,24 +614,24 @@ int Board::test(int depth){
 	return score;
 }
 
-void Board::go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
-	searchThread = new thread(&Board::startSearch, this, maxDepth, wTime, bTime, wInc, bInc, movesUntilTimeControl, searchForXMsec, infinitiveSearch);
-}
+// void Board::go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
+// 	searchThread = new thread(&Board::startSearch, this, maxDepth, wTime, bTime, wInc, bInc, movesUntilTimeControl, searchForXMsec, infinitiveSearch);
+// }
+
+// void Board::go(int maxDepth, time_control tc){
+// 	searchThread = new thread(&Board::startSearchTM, this, maxDepth, tc);
+// }
+
+// void Board::stop(){
+// 	if (searchThread == NULL) return;
+// 	interruption_requested = true;
+// 	searchThread->join();
+// 	delete searchThread;
+// 	searchThread = NULL;
+// }
+
 
 void Board::go(int maxDepth, time_control tc){
-	searchThread = new thread(&Board::startSearchTM, this, maxDepth, tc);
-}
-
-void Board::stop(){
-	if (searchThread == NULL) return;
-	interruption_requested = true;
-	searchThread->join();
-	delete searchThread;
-	searchThread = NULL;
-}
-
-
-void Board::startSearchTM(int maxDepth, time_control tc){
 	interruption_requested = false;
 	TimeManager<> tm(tc, (playing == white) ? WHITE : BLACK, &interruption_requested);
 
@@ -825,3 +828,45 @@ time_duration get_zero_time(){
 	return std::chrono::nanoseconds(0);
 #endif
 }
+
+int Board::search(int depth, int alpha, int beta) __restrict{
+	int score;
+	if (playing == white){
+		score = -search<ZW, white, false>(-1-alpha, -alpha, depth - 1);
+		if ( score > alpha ) score = -search<PV, white, false>(-beta, -alpha, depth - 1);
+	} else {
+		score = -search<ZW, black, false>(-1-alpha, -alpha, depth - 1);
+		if ( score > alpha ) score = -search<PV, black, false>(-beta, -alpha, depth - 1);
+	}
+	return score;
+}
+
+int Board::searchT(int depth, int alpha, int beta) __restrict{
+	return search(depth, alpha, beta);
+}
+
+void Board::setThreadID(unsigned int thrd_id){
+	this->thread_id = thrd_id;
+}
+
+
+void * Board::operator new(size_t size){
+	std::lock_guard<std::mutex> lk(bmem_m);
+	if (bmem_unused_last > MAX_BOARDS) {
+		bmem_unused_last = MAX_BOARDS;
+		for (unsigned int i = 0 ; i < MAX_BOARDS ; ++i) bmem_unused[i] = i;
+	}
+	if (bmem_unused_last == 0) throw std::bad_alloc();
+	return &(bmem[bmem_unused[--bmem_unused_last]]);
+}
+
+void Board::operator delete(void * p){
+	std::lock_guard<std::mutex> lk(bmem_m);
+	bmem_unused[bmem_unused_last++] = (((Board *) p) - bmem);
+	assert((((Board *) p) - bmem) < (MAX_BOARDS));
+	assert(bmem_unused_last <= MAX_BOARDS);
+}
+
+
+
+

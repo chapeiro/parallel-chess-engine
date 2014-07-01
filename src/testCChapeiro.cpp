@@ -48,7 +48,8 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 #endif
 			input.erase(0, c);
 			if (a < mindepth || a > maxdepth) continue;
-			cout << "\tDepth : \t" << a << "\tLeaf Nodes : \t" << solution;
+			cout << "\tDepth : \t" << a << "\tLeaf Nodes : \t";
+			cout << setw(20) << solution;
 			cout.flush();
 			board->dividedepth = -1;
 			time_t st = time(NULL);
@@ -56,8 +57,6 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 			totalTime += time(NULL) - st;
 			if (result == solution){
 				totalNodes += result;
-				if (solution < 10000000ull) cout << '\t';
-				if (solution < 100000000000000ull) cout << '\t';
 				cout << "\tOK\n";
 			} else {
 				cout << "\tCounted : \t" << result << "\tFailed!" << endl;
@@ -87,9 +86,9 @@ bool perftInterface(string input, time_t &totalTime, unsigned long long int &tot
 				DWORD bytes_written;
 				CHAR buffer[4096];
 				ReadFile( board->child_output_read, buffer, sizeof(buffer), &bytes_written, NULL);
+				board->pre = "";
 #endif
 				board->dividedepth = a - 1;
-				board->pre = "";
 				board->perft(a);
 #ifdef DIVIDEPERFT
 				WriteFile((board->child_input_write), "quit\n", strlen("quit\n"), &bytes_written, NULL);

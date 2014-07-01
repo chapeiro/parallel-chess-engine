@@ -14,6 +14,7 @@
 #include "zobristKeys.hpp"
 #include "MagicsAndPrecomputedData.hpp"
 #include "TimeManagement/TimeManager.hpp"
+#include "BoardInterface/BoardInterface.hpp"
 #include "SquareMapping.hpp"
 #include "MoveEncoding.hpp"
 #include <string>
@@ -184,11 +185,15 @@ constexpr bitboard castlingrights[2] = {0x0000000000000081ull, 0x810000000000000
 
 #define All_Pieces(x) ((((x)&colormask)==white) ? White_Pieces : Black_Pieces)
 
+class Task;
+
 extern int rootDepth;
-class Board {
+class Board { //cache_align
+	friend class Task;
 	private:
 		//State
-		cache_align bitboard Pieces[PIECESMAX];
+		//cache_align 
+		bitboard Pieces[PIECESMAX];
 		bitboard White_Pieces, Black_Pieces;
 		//unsigned long int kingSq[colormask + 1];
 		Zobrist zobr;
@@ -201,8 +206,12 @@ class Board {
 		//Memory
 		Zobrist history[256];
 		int lastHistoryEntry;
-		thread *searchThread;
-		// std::atomic<bool> interruption_requested;
+		unsigned int thread_id;
+
+		static Board bmem[MAX_BOARDS];
+		static std::mutex bmem_m;
+		static unsigned int bmem_unused[MAX_BOARDS];
+		static unsigned int bmem_unused_last;
 
 	public:
 		//for Perft
@@ -211,18 +220,30 @@ class Board {
 		U64 qNodes;
 		int dividedepth;
 #ifdef DIVIDEPERFT
+		std::string pre;
 		HANDLE child_input_write;
 		HANDLE child_output_read;
 #endif
-		std::string pre;
+
+	public:
+		struct internal_move{
+			bitboard tf;
+			unsigned int prom;
+
+			public:
+				inline internal_move(bitboard tf, unsigned int prom);
+				inline internal_move(bitboard tf);
+
+				inline void set(bitboard tf, unsigned int prom) __restrict;
+				inline void set(bitboard tf) __restrict;
+		};
 
 	public:
 		//Construction
 		static Board* createBoard(const char FEN[] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 		static void initialize(){};
-		Board(Board * b);
+		Board(Board * __restrict b);
 		Board(char fenBoard[] = (char*) "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", char fenPlaying = 'w', char fenCastling[] = (char*) "KQkq", int fenEnPX = -1, int fenEnPY = -1, int fenHC = 0, int fenFM = 1);
-		~Board(){ if (searchThread) searchThread->join(); }
 
 		void make(chapeiro::move m);
 
@@ -233,10 +254,11 @@ class Board {
 		void printHistory();
 		U64 perft(int depth);
 		int test(int depth);
-		void go(int maxDepth, time_control tc);
-		void go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
-		void stop();
+		// void go(int maxDepth, time_control tc);
+		// void go(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
 
+		static void * operator new(size_t size);
+		static void operator delete(void * p);
 	private:
 		char * moveToString(int move, char* m) const __restrict;
 		/**
@@ -264,7 +286,12 @@ class Board {
 		template<int color> void deactivateCastlingRights() __restrict;
 		void togglePlaying() __restrict;
 		void startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
-		void startSearchTM(int maxDepth, time_control tc);
+	public:
+		void go(int maxDepth, time_control tc);
+		int search(int depth, int alpha, int beta) __restrict;
+		int searchT(int depth, int alpha, int beta) __restrict;
+		void setThreadID(unsigned int thrd_id);
+	private:
 		std::string extractPV(int depth);
 
 		template<int color> bool validPosition(int kingSq) __restrict;
@@ -294,6 +321,19 @@ class Board {
 
 		bool threefoldRepetition() __restrict;
 };
+
+inline Board::internal_move::internal_move(bitboard tf, unsigned int prom): tf(tf), prom(prom){ }
+
+inline Board::internal_move::internal_move(bitboard tf): tf(tf){ }
+
+inline void Board::internal_move::set(bitboard tf, unsigned int prom) __restrict{
+	this->tf   = tf;
+	this->prom = prom;
+}
+
+inline void Board::internal_move::set(bitboard tf) __restrict{
+	this->tf   = tf;
+}
 
 inline int Board::getPieceIndex(char p) __restrict{
 	if (p > 'a') return getWhitePieceIndex(p-'a'+'A') | black;
@@ -409,8 +449,13 @@ template<SearchMode mode, int color> inline void Board::searchDeeper(int alpha, 
 		score = -search<mode, color, false>(-beta, -alpha, depth - 1);
 	} else if (mode == PV){
 		if (pvFound) {
-			score = -search<ZW, color, false>(-1-alpha, -alpha, depth - 1);
-			if ( score > alpha ) score = -search<PV, color, false>(-beta, -alpha, depth - 1);
+			playing = color; //will only be used in search deeper, when copying the board, so it must be fine...
+			if (!(board_interface->search(this, thread_id, depth, alpha, beta, 0, 0))){
+				score = -search<ZW, color, false>(-1-alpha, -alpha, depth - 1);
+				if ( score > alpha ) {
+					score = -search<PV, color, false>(-beta, -alpha, depth - 1);
+				}
+			}
 		} else {
 			score = -search<PV, color, false>(-beta, -alpha, depth - 1);
 		}
@@ -476,7 +521,7 @@ template<SearchMode mode, int color, bool root> int Board::search(int alpha, int
 		return search<(SearchMode) (mode | quiescenceMask), color, root>(mode==ZW?beta-1:alpha, beta, depth);
 	}
 #ifndef NO_TRANSPOSITION_TABLE
-	//FIXME
+	//FIXME fix
 	int killerMove = retrieveTTEntry<mode>(zobr, depth, alpha, beta);
 	//if (ttResult == ttExactScoreReturned) return alpha;
 	if (alpha >= beta) {
@@ -502,8 +547,7 @@ template<SearchMode mode, int color, bool root> int Board::search(int alpha, int
 	int score;
 	bool pvFound = false;
 
-	bitboard bestTF(0);
-	unsigned long int bestProm (0);
+	internal_move bmove{0, 0};
 
 	unsigned long int kingSq = square(Pieces[KING | color]);
 #ifndef NDEBUG
@@ -557,6 +601,7 @@ go infinite
 								Pieces[ROOK | color] ^= castlingc<color>::KSCRT;
 								All_Pieces(color) ^= castlingc<color>::KSCFT;
 								zobr ^= toggle;
+								internal_move smove(castlingc<color>::KSCKT);
 								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 								Pieces[ROOK | color] ^= castlingc<color>::KSCRT;
 								All_Pieces(color) ^= castlingc<color>::KSCFT;
@@ -573,6 +618,7 @@ go infinite
 								Pieces[ROOK | color] ^= castlingc<color>::QSCRT;
 								All_Pieces(color) ^= castlingc<color>::QSCFT;
 								zobr ^= toggle;
+								internal_move smove(castlingc<color>::QSCKT);
 								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 								Pieces[ROOK | color] ^= castlingc<color>::QSCRT;
 								All_Pieces(color) ^= castlingc<color>::QSCFT;
@@ -593,7 +639,7 @@ go infinite
 							pvFound = true;
 							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 								alpha = score;	//Better move found!
-								bestTF = (killerFrom > killerTo) ? castlingc<color>::KSCKT : castlingc<color>::QSCKT;
+								bmove = smove;
 							}
 						}
 						halfmoves = 0;
@@ -628,6 +674,7 @@ go infinite
 						All_Pieces(color) ^= tf;
 						pieceScore -= scoreD;
 						zobr ^= toggle;
+						internal_move smove(tf, 0);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						pieceScore += scoreD;
@@ -646,10 +693,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-
-							bestTF =  tf;
-							ASSUME(bestTF & All_Pieces(color)); //FIXME REMOVE
-							bestProm = 0;
+							bmove = smove;
 						}
 						halfmoves = 0;
 					}
@@ -703,6 +747,7 @@ go infinite
 								All_Pieces(color ^ 1) ^= capturedPos;
 								pieceScore -= scoreD;
 								zobr ^= toggle;
+								internal_move smove(tf, promSp);
 								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 								zobr ^= toggle;
 								pieceScore += scoreD;
@@ -719,8 +764,7 @@ go infinite
 								pvFound = true;
 								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 									alpha = score;	//Better move found!
-									bestTF = tf;
-									bestProm = promSp;
+									bmove = smove;
 								}
 							}
 						} else {
@@ -741,6 +785,7 @@ go infinite
 							All_Pieces(color) ^= tf;
 							pieceScore -= scoreD;
 							zobr ^= toggle;
+							internal_move smove(tf, promSp);
 							searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 							zobr ^= toggle;
 							pieceScore += scoreD;
@@ -755,8 +800,7 @@ go infinite
 							pvFound = true;
 							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 								alpha = score;	//Better move found!
-								bestTF = tf;
-								bestProm = promSp;
+								bmove = smove;
 							}
 							enPassant = 0;
 						}
@@ -826,6 +870,7 @@ go infinite
 						Pieces[prom] ^= to;
 						pieceScore += Value::piece[prom];
 						zobr ^= zobrist::keys[prom][toSq];
+						internal_move smove(tf, prom);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= zobrist::keys[prom][toSq];
 						pieceScore -= Value::piece[prom];
@@ -845,9 +890,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-
-							bestTF = tf;
-							bestProm = prom;
+							bmove = smove;
 						}
 					}
 					zobr ^= toggle;
@@ -893,6 +936,7 @@ go infinite
 					All_Pieces(color) ^= tf;
 					All_Pieces(color ^ 1) ^= to;
 					zobr ^= toggle;
+					internal_move smove(tf, PAWN | color);
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[PAWN | color] ^= tf;
@@ -908,8 +952,7 @@ go infinite
 					pvFound = true;
 					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 						alpha = score;	//Better move found!
-						bestTF = tf;
-						bestProm = PAWN | color;
+						bmove = smove;
 					}
 				}
 			}
@@ -936,6 +979,7 @@ go infinite
 				All_Pieces(color) ^= tf;
 				All_Pieces(color ^ 1) ^= cp;
 				zobr ^= toggle;
+				internal_move smove(tf,  PAWN | color | TTMove_EnPassantPromFlag);
 				searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 				zobr ^= toggle;
 				Pieces[PAWN | color] ^= tf;
@@ -950,8 +994,7 @@ go infinite
 				pvFound = true;
 				if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 					alpha = score;	//Better move found!
-					bestTF = tf;
-					bestProm = PAWN | color | TTMove_EnPassantPromFlag;
+					bmove = smove;
 				}
 			}
 		}
@@ -984,6 +1027,7 @@ go infinite
 					Pieces[prom] ^= to;
 					pieceScore += Value::piece[prom];
 					zobr ^= zobrist::keys[prom][toSq];
+					internal_move smove(tf, prom);
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= zobrist::keys[prom][toSq];
 					pieceScore -= Value::piece[prom];
@@ -1000,8 +1044,7 @@ go infinite
 					pvFound = true;
 					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 						alpha = score;	//Better move found!
-						bestTF = tf;
-						bestProm = prom;
+						bmove = smove;
 					}
 				}
 				zobr ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
@@ -1099,6 +1142,7 @@ go infinite
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[captured] ^= to;
@@ -1114,7 +1158,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 				}
@@ -1132,6 +1176,7 @@ go infinite
 						toggle ^= zobrist::keys[KING | color][kingSq];
 						toggle ^= zobrist::keys[KING | color][nkSq];
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						if( score >= beta ) {
@@ -1147,7 +1192,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					Pieces[captured] ^= to;
@@ -1172,6 +1217,7 @@ go infinite
 						All_Pieces(color) ^= tf;
 						Pieces[dt[i].piecet] ^= tf;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[dt[i].piecet] ^= tf;
@@ -1183,7 +1229,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 				}
@@ -1198,6 +1244,7 @@ go infinite
 						Zobrist toggle = zobrist::keys[KING | color][kingSq];
 						toggle ^= zobrist::keys[KING | color][nkSq];
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						if( score >= beta ) {
@@ -1210,7 +1257,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					Pieces[KING | color] ^= tf;
@@ -1239,6 +1286,7 @@ go infinite
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[captured] ^= to;
@@ -1254,7 +1302,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 				}
@@ -1277,6 +1325,7 @@ go infinite
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[captured] ^= to;
@@ -1295,7 +1344,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					zobr ^= ct2;
@@ -1317,6 +1366,7 @@ go infinite
 						All_Pieces(color) ^= tf;
 						All_Pieces(color ^ 1) ^= to;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[captured] ^= to;
@@ -1332,7 +1382,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 				}
@@ -1354,6 +1404,7 @@ go infinite
 						toggle ^= zobrist::keys[KING | color][nkSq];
 						toggle ^= zobrist::keys[KING | color][kingSq];
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						if( score >= beta ) {
@@ -1372,7 +1423,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					Pieces[captured] ^= to;
@@ -1400,6 +1451,7 @@ go infinite
 						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						Pieces[ROOK | color] ^= castlingc<color>::KSCRT;
 						zobr ^= toggle;
+						internal_move smove(castlingc<color>::KSCKT);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[ROOK | color] ^= castlingc<color>::KSCRT;
@@ -1414,7 +1466,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = castlingc<color>::KSCKT;
+							bmove = smove;
 						}
 					}
 					kingSq = castlingc<color>::kingSqBefore;
@@ -1434,6 +1486,7 @@ go infinite
 						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 						Pieces[ROOK | color] ^= castlingc<color>::QSCRT;
 						zobr ^= toggle;
+						internal_move smove(castlingc<color>::QSCKT);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[ROOK | color] ^= castlingc<color>::QSCRT;
@@ -1448,7 +1501,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = castlingc<color>::QSCKT;
+							bmove = smove;
 						}
 					}
 					Pieces[KING | color] ^= castlingc<color>::QSCKT;
@@ -1467,6 +1520,7 @@ go infinite
 						All_Pieces(color) ^= tf;
 						Pieces[dt[i].piecet] ^= tf;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[dt[i].piecet] ^= tf;
@@ -1478,7 +1532,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 				}
@@ -1498,6 +1552,7 @@ go infinite
 						All_Pieces(color) ^= tf;
 						Pieces[ROOK | color] ^= tf;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[ROOK | color] ^= tf;
@@ -1513,7 +1568,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					zobr ^= ct2;
@@ -1532,6 +1587,7 @@ go infinite
 						All_Pieces(color) ^= tf;
 						Pieces[QUEEN | color] ^= tf;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[QUEEN | color] ^= tf;
@@ -1543,7 +1599,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 				}
@@ -1562,6 +1618,7 @@ go infinite
 						Zobrist toggle = zobrist::keys[KING | color][nkSq];
 						toggle ^= zobrist::keys[KING | color][kingSq];
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						if( score >= beta ) {
@@ -1578,7 +1635,7 @@ go infinite
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					Pieces[KING | color] ^= tf;
@@ -1614,6 +1671,7 @@ go infinite
 				All_Pieces(color) ^= tf;
 				Pieces[PAWN | color] ^= tf;
 				zobr ^= toggle;
+				internal_move smove(tf, PAWN | color);
 				searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 				zobr ^= toggle;
 				Pieces[PAWN | color] ^= tf;
@@ -1625,8 +1683,7 @@ go infinite
 				pvFound = true;
 				if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 					alpha = score;	//Better move found!
-					bestTF = tf;
-					bestProm = PAWN | color;
+					bmove = smove;
 				}
 			}
 			tmp = pawnsToForward;
@@ -1652,6 +1709,7 @@ go infinite
 				All_Pieces(color) ^= tf;
 				Pieces[PAWN | color] ^= tf;
 				zobr ^= toggle;
+				internal_move smove(tf, PAWN | color);
 				searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 				zobr ^= toggle;
 				Pieces[PAWN | color] ^= tf;
@@ -1663,8 +1721,7 @@ go infinite
 				pvFound = true;
 				if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 					alpha = score;	//Better move found!
-					bestTF = tf;
-					bestProm = PAWN | color;
+					bmove = smove;
 				}
 			}
 			enPassant = bitboard(0);
@@ -1693,6 +1750,7 @@ go infinite
 							toggle ^= zobrist::keys[PAWN | color][toSq - diff];
 							Pieces[PAWN | color] ^= tf;
 							zobr ^= toggle;
+							internal_move smove(tf, PAWN | color);
 							searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 							zobr ^= toggle;
 							Pieces[PAWN | color] ^= tf;
@@ -1710,8 +1768,7 @@ go infinite
 							pvFound = true;
 							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 								alpha = score;	//Better move found!
-								bestTF = tf;
-								bestProm = PAWN | color;
+								bmove = smove;
 							}
 						}
 						All_Pieces(color) ^= tf;
@@ -1730,6 +1787,7 @@ go infinite
 								toggle ^= zobrist::keys[PAWN | color][toenpsq - diff];
 								Pieces[PAWN | color] ^= tf;
 								zobr ^= toggle;
+								internal_move smove(tf, PAWN | color | TTMove_EnPassantPromFlag);
 								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 								zobr ^= toggle;
 								Pieces[PAWN | color] ^= tf;
@@ -1747,8 +1805,7 @@ go infinite
 								pvFound = true;
 								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 									alpha = score;	//Better move found!
-									bestTF = tf;
-									bestProm = PAWN | color | TTMove_EnPassantPromFlag;
+									bmove = smove;
 								}
 							}
 							All_Pieces(color) ^= tf;
@@ -1771,6 +1828,7 @@ go infinite
 								Pieces[prom] ^= checkedBy;
 								pieceScore += Value::piece[prom];
 								zobr ^= zobrist::keys[prom][toSq];
+								internal_move smove(tf, prom);
 								searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 								zobr ^= zobrist::keys[prom][toSq];
 								pieceScore -= Value::piece[prom];
@@ -1792,8 +1850,7 @@ go infinite
 								pvFound = true;
 								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 									alpha = score;	//Better move found!
-									bestTF = tf;
-									bestProm = prom;
+									bmove = smove;
 								}
 							}
 							zobr ^= zobrist::keys[PAWN | color][toSq - diff];
@@ -1815,6 +1872,7 @@ go infinite
 					toggle ^= zobrist::keys[KNIGHT | color][toSq];
 					Pieces[KNIGHT | color] ^= tf;
 					zobr ^= toggle;
+					internal_move smove(tf);
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[KNIGHT | color] ^= tf;
@@ -1832,7 +1890,7 @@ go infinite
 					pvFound = true;
 					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 						alpha = score;	//Better move found!
-						bestTF = tf;
+						bmove = smove;
 					}
 				}
 				All_Pieces(color) ^= tf;
@@ -1848,6 +1906,7 @@ go infinite
 					toggle ^= zobrist::keys[BISHOP | color][toSq];
 					Pieces[BISHOP | color] ^= tf;
 					zobr ^= toggle;
+					internal_move smove(tf);
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[BISHOP | color] ^= tf;
@@ -1865,7 +1924,7 @@ go infinite
 					pvFound = true;
 					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 						alpha = score;	//Better move found!
-						bestTF = tf;
+						bmove = smove;
 					}
 				}
 				All_Pieces(color) ^= tf;
@@ -1886,6 +1945,7 @@ go infinite
 					toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
 					Pieces[ROOK | color] ^= tf;
 					zobr ^= toggle;
+					internal_move smove(tf);
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[ROOK | color] ^= tf;
@@ -1905,7 +1965,7 @@ go infinite
 					pvFound = true;
 					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 						alpha = score;	//Better move found!
-						bestTF = tf;
+						bmove = smove;
 					}
 				}
 				All_Pieces(color) ^= tf;
@@ -1922,6 +1982,7 @@ go infinite
 					toggle ^= zobrist::keys[QUEEN | color][toSq];
 					Pieces[QUEEN | color] ^= tf;
 					zobr ^= toggle;
+					internal_move smove(tf);
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[QUEEN | color] ^= tf;
@@ -1939,7 +2000,7 @@ go infinite
 					pvFound = true;
 					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 						alpha = score;	//Better move found!
-						bestTF = tf;
+						bmove = smove;
 					}
 				}
 				All_Pieces(color) ^= tf;
@@ -1953,7 +2014,7 @@ go infinite
 			unsigned long int tmpSq = square(Pieces[KING | color]);
 			bitboard ray = rays[tmpSq][toSq];
 			/**
-			 * FIXME
+			 * FIXME bug
 			 *
 position startpos moves c2c4 e7e6 d2d4 g8f6 b1c3 c7c5 d4d5 e6d5 c4d5 d7d6 g1f3 g7g6 e2e4 a7a6 c1g5 h7h6 d1a4 c8d7 g5f6 d8f6 a4b3 b7b5 f1e2 f8g7 a1b1 e8g8 e2d1 f6f4 d1c2 f7f5 e4f5 f8e8 c3e2 d7f5 e1f1 f5c2 e2f4 c2b3 a2b3 g6g5 f4e6 e8e7 f3d2 b8d7 d2e4 g7e5 e6c7 a8c8 c7a6 d7b6 b1e1 e7a7 e4c5 b6d5 c5d3 a7a6 d3e5 d6e5 g2g3 c8e8 h1g1 e5e4 e1d1 e4e3 d1d5 a6a1 f1e2 a1g1 f2e3 g1g2 e2f3 g2h2 d5b5 h2d2 b5b6 d2d3 f3g4 e8e3 b6b8 g8f7 b8b7 f7f6 b7b6 f6e5 b6b5 e5e4 b5b4 e4d5
 2012-08-30 17:15:43.911-->1:go wtime 32903 btime 25871
@@ -2013,6 +2074,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							toggle ^= zobrist::keys[PAWN | (color ^ 1)][tmpSq2+(color==white)?-8:8];
 							zobr ^= toggle;
 							pieceScore -= Value::piece[PAWN | (color ^ 1)];
+							internal_move smove(tf, PAWN | color | TTMove_EnPassantPromFlag);
 							searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 							pieceScore += Value::piece[PAWN | (color ^ 1)];
 							zobr ^= toggle;
@@ -2035,8 +2097,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							pvFound = true;
 							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 								alpha = score;	//Better move found!
-								bestTF = tf;
-								bestProm = PAWN | color | TTMove_EnPassantPromFlag;
+								bmove = smove;
 							}
 						}
 						Pieces[PAWN | color] ^= tf;
@@ -2088,6 +2149,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					toggle ^= zobrist::enPassant[7&tmpSq];
 					Pieces[PAWN | color] ^= tf;
 					zobr ^= toggle;
+					internal_move smove(tf, PAWN | color);
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[PAWN | color] ^= tf;
@@ -2100,8 +2162,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					pvFound = true;
 					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 						alpha = score;	//Better move found!
-						bestTF = tf;
-						bestProm = PAWN | color;
+						bmove = smove;
 					}
 				}
 				All_Pieces(color) ^= tf;
@@ -2126,6 +2187,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						Pieces[prom] ^= to;
 						pieceScore += Value::piece[prom];
 						zobr ^= zobrist::keys[prom][toSq];
+						internal_move smove(tf, prom);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= zobrist::keys[prom][toSq];
 						pieceScore -= Value::piece[prom];
@@ -2142,8 +2204,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
-							bestProm = prom;
+							bmove = smove;
 						}
 					}
 					zobr ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
@@ -2167,6 +2228,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					toggle ^= zobrist::keys[PAWN | color][toSq+((color==white)?-8:8)];
 					Pieces[PAWN | color] ^= tf;
 					zobr ^= toggle;
+					internal_move smove(tf, PAWN | color);
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					Pieces[PAWN | color] ^= tf;
@@ -2179,8 +2241,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					pvFound = true;
 					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 						alpha = score;	//Better move found!
-						bestTF = tf;
-						bestProm = PAWN | color;
+						bmove = smove;
 					}
 				}
 				All_Pieces(color) ^= tf;
@@ -2201,6 +2262,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						toggle ^= zobrist::keys[KNIGHT | color][fromSq];
 						Pieces[KNIGHT | color] ^= tf;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[KNIGHT | color] ^= tf;
@@ -2213,7 +2275,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					All_Pieces(color) ^= tf;
@@ -2234,6 +2296,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						toggle ^= zobrist::keys[BISHOP | color][fromSq];
 						Pieces[BISHOP | color] ^= tf;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[BISHOP | color] ^= tf;
@@ -2246,7 +2309,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					All_Pieces(color) ^= tf;
@@ -2269,6 +2332,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						toggle ^= zobrist::keys[ROOK | color][fromSq];
 						Pieces[ROOK | color] ^= tf;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[ROOK | color] ^= tf;
@@ -2281,7 +2345,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					All_Pieces(color) ^= tf;
@@ -2302,6 +2366,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						toggle ^= zobrist::keys[QUEEN | color][fromSq];
 						Pieces[QUEEN | color] ^= tf;
 						zobr ^= toggle;
+						internal_move smove(tf);
 						searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 						zobr ^= toggle;
 						Pieces[QUEEN | color] ^= tf;
@@ -2314,7 +2379,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						pvFound = true;
 						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 							alpha = score;	//Better move found!
-							bestTF = tf;
+							bmove = smove;
 						}
 					}
 					All_Pieces(color) ^= tf;
@@ -2348,6 +2413,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					toggle ^= zobrist::keys[attacker][kingSq];
 					pieceScore -= Value::piece[attacker];
 					zobr ^= toggle;
+					internal_move smove(tf);
 					searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 					zobr ^= toggle;
 					pieceScore += Value::piece[attacker];
@@ -2366,7 +2432,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					pvFound = true;
 					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 						alpha = score;	//Better move found!
-						bestTF = tf;
+						bmove = smove;
 					}
 				}
 				Pieces[KING | color] ^= tf;
@@ -2388,6 +2454,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				Zobrist toggle = zobrist::keys[KING | color][kingSq];
 				toggle ^= zobrist::keys[KING | color][fromSq];
 				zobr ^= toggle;
+				internal_move smove(tf);
 				searchDeeper<mode, color^1>(alpha, beta, depth, pvFound, score);
 				zobr ^= toggle;
 				if( score >= beta ) {
@@ -2403,7 +2470,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				pvFound = true;
 				if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
 					alpha = score;	//Better move found!
-					bestTF = tf;
+					bmove = smove;
 				}
 			}
 			Pieces[KING | color] ^= tf;
@@ -2412,6 +2479,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		castling = oldcastling;
 		zobr ^= ct;
 	}
+	while (board_interface->collectNextScore(score, thread_id));
 	halfmoves = oldhm;
 	zobr ^= zobrist::blackKey;
 	enPassant = tmpEnPassant;
@@ -2462,14 +2530,14 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				}
 				addTTEntry<ExactScore>(zobr, depth, 0, alpha);//ExactScore
 			} else if (alpha != startingAlpha) {
-				assert(bestTF != bitboard(0));
-				addTTEntry<AlphaCutoff>(zobr, depth, getMove<color>(bestTF, bestProm), alpha);
+				assert(bmove.tf != bitboard(0));
+				addTTEntry<AlphaCutoff>(zobr, depth, getMove<color>(bmove.tf, bmove.prom), alpha);
 			} else {
-				assert(bestTF == bitboard(0));//ExactScore
-				addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, depth, (bestTF == bitboard(0)) ? killerMove : getMove<color>(bestTF, bestProm), alpha);
+				assert(bmove.tf == bitboard(0));//ExactScore
+				addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, depth, (bmove.tf == bitboard(0)) ? killerMove : getMove<color>(bmove.tf, bmove.prom), alpha);
 			}
 		} else {
-			addTTEntry<QSearchAlphaCutoff>(zobr, depth, (bestTF == bitboard(0)) ? killerMove : getMove<color>(bestTF, bestProm), alpha);
+			addTTEntry<QSearchAlphaCutoff>(zobr, depth, (bmove.tf == bitboard(0)) ? killerMove : getMove<color>(bmove.tf, bmove.prom), alpha);
 		}
 	}
 	return alpha;
@@ -2677,7 +2745,7 @@ template<int color> bool Board::stalemate() __restrict{
 
 template<int color> int Board::getEvaluation(int depth) __restrict{
 	/**
-	 * FIXME
+	 * FIXME bad evaluation
 	 * 8/8/8/8/6k1/R5p1/P1r3P1/5K2 b - - 21 71
 	 * 3-fold, not promoting pawn because of negative values for pawns on sides (1-2 steps on endgame)
 	 *
@@ -2819,4 +2887,5 @@ inline time_td get_current_time();
 inline time_duration milli_to_time(U64 milli);
 inline time_duration get_zero_time();
 inline time_td get_factored_time(time_td el_time);
+
 #endif /* BOARD_HPP_ */

@@ -45,8 +45,11 @@ void help(UCI_command com, ostream &out){
 		out << "\tIf the game was played from the start position the string \"startpos\" can be sent." << endl;
 		break;
 	case UCI_newGame :
-		out << "\tthis is sent to the engine when the next search";
+		out << "\tThis is sent to the engine when the next search";
 		out << "will be from a different game." << endl;
+		break;
+	case UCI_stop :
+		out << "\tStops calculating as soon as possible." << endl;
 		break;
 	case UCI_quit :
 		out << "\tQuits the program as soon as possible." << endl;
@@ -122,10 +125,10 @@ int uci(){
 	//cout << "option name Hash type spin default 1 min 1 max 512" << endl;
 	cout << "uciok" << endl;
 	bool initialized = false;
-	BareBoardInterface board_interface;
 	string input;
 	do {
 		getline(cin, input);
+		board_interface->ui_garbage_collection();
 		if (input.find("isready")!=string::npos){
 			if (!initialized) initialized = initializeEngine();
 			cout << "readyok" << endl;
@@ -136,7 +139,7 @@ int uci(){
 			}
 			int b(-1);
 			if (input.find("startpos")!=string::npos){
-				board_interface.setBoard();
+				board_interface->setBoard();
 				sscanf(input.c_str(), "position startpos%n", &b);
 			} else {
 				int a(-1);
@@ -146,7 +149,7 @@ int uci(){
 					continue;
 				}
 				try {
-					board_interface.setBoard(input.substr(a, b));
+					board_interface->setBoard(input.substr(a, b));
 				} catch (exception* e) {
 					cerr << e->what() << endl;
 					continue;
@@ -158,10 +161,10 @@ int uci(){
 				char m[6];
 				while (sscanf(input.c_str(), " %5s%n", m, &b) >= 1){
 					input.erase(0, b);
-					board_interface.makeMove(chapeiro::convertUCImove(m));
+					board_interface->makeMove(chapeiro::convertUCImove(m));
 				}
 			}
-			board_interface.printBoard();
+			board_interface->printBoard();
 		/**} else if (input.find("setoption name ")!=string::npos){
 			input.erase(0, 15);
 			if (input.find("Hash value ")!=string::npos){
@@ -180,17 +183,19 @@ int uci(){
 				help(UCI_debug);
 			}
 		} else if (input.find("ucinewgame")!=string::npos){
-			board_interface.newGame();
+			board_interface->newGame();
 		} else if (input.find("go")==0){
 			input.erase(0, 2);
 			std::pair<int, time_control> p(getTimeControl(input));
-			if (!board_interface.go(p.first, p.second)){
-				cerr << "Unknown position! Search can not start. " << endl;
-				cerr << "Use position command." << endl;
+			if (!board_interface->go(p.first, p.second)){
+				cerr << "Unknown position or a search is still running" << endl;
+				cerr << "Search can not start. " << endl;
+				cerr << "Use stop or position command." << endl;
+				help(UCI_stop, cerr);
 				help(UCI_position, cerr);
 			}
 		} else if (input.find("stop")!=string::npos){
-			board_interface.stop();
+			board_interface->stop();
 #ifdef STATS
 		} else if (input.compare("stats") == 0){
 			U64 ttHits = (ttaccesses - ttmisses);
@@ -213,6 +218,8 @@ int uci(){
 		}
 	} while (input.find("quit")==string::npos);
 	//if (debugcc) signEndOfFile("CChapeiro Terminated");
+	board_interface->stop();
+	delete board_interface;
 	return 0;
 }
 
