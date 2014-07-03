@@ -265,6 +265,23 @@ class Board { //cache_align
 				inline void set(bitboard tf) __restrict;
 		};
 
+	private:
+		struct search_state{
+			int           alpha;
+			int           beta ;
+			internal_move bmove;
+			int           depth;
+			int           score;
+			bool          pvFound;
+
+			search_state(int alpha, int beta, int depth);
+		};
+
+		struct move_info{
+			std::function<void ()> toggle;
+			int                    scoreDelta;
+		};
+
 	public:
 		//Construction
 		static Board* createBoard(const char FEN[] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -341,10 +358,14 @@ class Board { //cache_align
 		template<color plr> int getMove(bitboard tf, int prom) __restrict;
 
 		template<SearchMode mode, color plr, bool root> int search(int alpha, int beta, int depth) __restrict;
+		template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2>
+			bool deeper(const internal_move& child, int oldhm, bitboard old_enpassant, search_state &sst, UnaryPredicate toggleMove, UnaryPredicate2 toggleGroupMove, int scoreGD) __restrict;
+		template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2, bool has_score_delta = true>
+			bool deeper(const internal_move& child, int oldhm, bitboard old_enpassant, search_state &sst, UnaryPredicate toggleMove, int scoreD, UnaryPredicate2 toggleGroupMove, int scoreGD) __restrict;
 		template<SearchMode mode, color plr> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict;
 		template<color plr> int quieSearch(int alpha, int beta) __restrict;
 
-		template<SearchMode mode, color plr, bool root> void prepare_beta_cutoff(int oldhm, bitboard old_enpassant, int enSq, int move_entry, int depth, int beta) __restrict;
+		template<SearchMode mode, color plr, bool root> void prepare_beta_cutoff(int oldhm, bitboard old_enpassant, const internal_move& move_entry, int depth, int beta) __restrict;
 
 		bool threefoldRepetition() __restrict;
 };
@@ -361,6 +382,8 @@ inline void Board::internal_move::set(bitboard tf, unsigned int prom) __restrict
 inline void Board::internal_move::set(bitboard tf) __restrict{
 	this->tf   = tf;
 }
+
+inline Board::search_state::search_state(int alpha, int beta, int depth): alpha(alpha), beta(beta), bmove(0, 0), depth(depth), score(0), pvFound(false){ }
 
 inline int Board::getPieceIndex(char p) __restrict{
 	if (p > 'a') return getWhitePieceIndex(p-'a'+'A') | BLACK;
@@ -495,18 +518,47 @@ template<SearchMode mode, color plr> inline void Board::searchDeeper(int alpha, 
 	removeLastHistoryEntry();
 }
 
+template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2>
+bool Board::deeper(const internal_move& child, int oldhm, bitboard old_enpassant, search_state &sst, UnaryPredicate toggleMove, UnaryPredicate2 toggleGroupMove, int scoreGD) __restrict{
+	return deeper<mode, plr, root, UnaryPredicate, UnaryPredicate2, false>(child, oldhm, old_enpassant, sst, toggleMove, 0, toggleGroupMove, scoreGD);
+}
+
+template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2, bool has_score_delta>
+bool Board::deeper(const internal_move& child, int oldhm, bitboard old_enpassant, search_state &sst, UnaryPredicate toggleMove, int scoreD, UnaryPredicate2 toggleGroupMove, int scoreGD) __restrict{
+	if (has_score_delta) pieceScore += scoreD;
+	toggleMove();
+	searchDeeper<mode, !plr>(sst.alpha, sst.beta, sst.depth, sst.pvFound, sst.score);
+	toggleMove();
+	if (has_score_delta) pieceScore -= scoreD;
+
+	if( sst.score >= sst.beta ) {
+		pieceScore += scoreGD;
+		toggleGroupMove();
+
+		prepare_beta_cutoff<mode, plr, root>(oldhm, old_enpassant, child, sst.depth, sst.beta);
+		sst.score = sst.beta;		// fail-hard beta-cutoff
+		return true;
+	}
+	sst.pvFound = true;
+	if( ( mode == PV || mode >= quiescenceMask ) && sst.score > sst.alpha ){
+		sst.alpha = sst.score;		//Better move found!
+		sst.bmove = child;
+	}
+	return false;
+};
+
 template<SearchMode mode, color plr, bool root>
-inline void Board::prepare_beta_cutoff(int oldhm, bitboard old_enpassant, int enSq, int depth, int move_entry, int beta) __restrict{
+inline void Board::prepare_beta_cutoff(int oldhm, bitboard old_enpassant, const internal_move& move_entry, int depth, int beta) __restrict{
 	halfmoves = oldhm;
 	if (!root) {
 		playing = !plr;
 		zobr   ^= zobrist::blackKey;
 	}
 	enPassant = old_enpassant;
-	if (enPassant) zobr ^= zobrist::enPassant[enSq];
+	if (enPassant) zobr ^= zobrist::enPassant[7 & square(enPassant)];
 	if (plr==black) --fullmoves;
 
-	addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, move_entry, beta);
+	addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<plr>(move_entry.tf, move_entry.prom), beta);
 	statistics(++betaCutOff);
 }
 
@@ -582,12 +634,9 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 
 	U64 stNodes (stats.nodes);
 	U64 stHorNodes (stats.horizonNodes);
-	int startingAlpha = alpha;
 
-	int score;
-	bool pvFound = false;
+	search_state sst(alpha, beta, depth);
 
-	internal_move bmove(0, 0);
 	assert_state();
 	unsigned long int kingSq = square(Pieces[KING | plr]);
 #ifndef NDEBUG
@@ -646,20 +695,9 @@ go infinite
 								};
 								
 								internal_move smove(castlingc<plr>::KSCKT);
-								toggleMove();
-								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-								toggleMove();
 
-								if( score >= beta ) {
-									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
-									statistics(++cutOffByKillerMove);
-									return beta;			// fail-hard beta-cutoff
-								}
-								pvFound = true;
-								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-									alpha = score;	//Better move found!
-									bmove = smove;
-								}
+								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
+
 							} else {
 								statistics(++ttError_Type1_SameHashKey);
 								killerMoveOk = false;
@@ -678,20 +716,8 @@ go infinite
 								};
 
 								internal_move smove(castlingc<plr>::QSCKT);
-								toggleMove();
-								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-								toggleMove();
 
-								if( score >= beta ) {
-									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
-									statistics(++cutOffByKillerMove);
-									return beta;			// fail-hard beta-cutoff
-								}
-								pvFound = true;
-								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-									alpha = score;	//Better move found!
-									bmove = smove;
-								}
+								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 							} else {
 								statistics(++ttError_Type1_SameHashKey);
 								killerMoveOk = false;
@@ -738,22 +764,7 @@ go infinite
 						};
 
 						internal_move smove(tf, 0);
-						pieceScore -= scoreD;
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-						pieceScore += scoreD;
-
-						if( score >= beta ) {
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
-							statistics(++cutOffByKillerMove);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 						halfmoves = 0;
 					}
 				} else {
@@ -807,28 +818,15 @@ go infinite
 								//ASSUME(Pieces[PAWN | plr] & killerFrom);
 								//ASSUME((Pieces[toPiece] & killerTo)==0);
 								internal_move smove(tf, promSp);
-								pieceScore -= scoreD;
-								toggleMove();
-								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-								toggleMove();
-								pieceScore += scoreD;
-								if( score >= beta ) {
-									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
-									statistics(++cutOffByKillerMove);
-									return beta;			// fail-hard beta-cutoff
-								}
-								pvFound = true;
-								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-									alpha = score;	//Better move found!
-									bmove = smove;
-								}
+								
+								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 							}
 						} else {
 							int scoreD = Value::piece[PAWN | plr] - Value::piece[toPiece];
 							Zobrist toggle = zobrist::keys[PAWN | plr][killerFromSq];
-							toggle ^= zobrist::keys[toPiece][killerToSq];
+							toggle        ^= zobrist::keys[toPiece][killerToSq];
 							if (killerToSq == (killerFromSq + ((plr == white) ? 16 : -16))){
-								toggle ^= zobrist::enPassant[7&(killerFromSq + ((plr == white) ? 8 : -8))];
+								toggle   ^= zobrist::enPassant[7&(killerFromSq + ((plr == white) ? 8 : -8))];
 								enPassant = ((plr == white) ? (killerFrom << 8) : (killerFrom >> 8));
 							}
 							ASSUME(Pieces[PAWN | plr] & killerFrom);
@@ -845,22 +843,7 @@ go infinite
 							};
 
 							internal_move smove(tf, promSp);
-							pieceScore -= scoreD;
-							toggleMove();
-							searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-							toggleMove();
-							pieceScore += scoreD;
-
-							if( score >= beta ) {
-								prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
-								statistics(++cutOffByKillerMove);
-								return beta;			// fail-hard beta-cutoff
-							}
-							pvFound = true;
-							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-								alpha = score;	//Better move found!
-								bmove = smove;
-							}
+							if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 							enPassant = 0;
 						}
 					} else {
@@ -909,9 +892,8 @@ go infinite
 			attacking[1] &= notfile7 & lastRank_b;
 		}
 		assert_state();
-		int scoreD = -Value::piece[PAWN | plr];
 		for (int captured = QUEEN | (!plr); captured >= 0 ; captured-=2){
-			scoreD -= Value::piece[captured];
+			int scoreD = - Value::piece[PAWN | plr] - Value::piece[captured];
 			for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 				bitboard tmp = attacking[at] & Pieces[captured];
 
@@ -941,30 +923,14 @@ go infinite
 						};
 
 						internal_move smove(tf, prom);
-						pieceScore += scoreD;
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-						pieceScore -= scoreD;
 
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, toggleGroupMove, 0)) return sst.score;
 
 						scoreD -= Value::piece[prom];
 					}
 					toggleGroupMove();
 				}
 			}
-			scoreD += Value::piece[captured];
 		}
 		assert_state();
 		attacking[0] = attacking[1] = Pieces[PAWN | plr];
@@ -1007,21 +973,8 @@ go infinite
 					};
 
 					internal_move smove(tf, PAWN | plr);
-					toggleMove();
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					toggleMove();
 
-					if( score >= beta ) {
-						pieceScore += scoreGD;
-
-						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
-						return beta;			// fail-hard beta-cutoff
-					}
-					pvFound = true;
-					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-						alpha = score;	//Better move found!
-						bmove = smove;
-					}
+					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, scoreGD)) return sst.score;
 				}
 			}
 			pieceScore += scoreGD;
@@ -1051,21 +1004,7 @@ go infinite
 				};
 
 				internal_move smove(tf,  PAWN | plr | TTMove_EnPassantPromFlag);
-				pieceScore -= Value::piece[PAWN | (!plr)];
-				toggleMove();
-				searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-				toggleMove();
-				pieceScore += Value::piece[PAWN | (!plr)];
-
-				if( score >= beta ) {
-					prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
-					return beta;			// fail-hard beta-cutoff
-				}
-				pvFound = true;
-				if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-					alpha = score;	//Better move found!
-					bmove = smove;
-				}
+				if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -Value::piece[PAWN | (!plr)], [](){}, 0)) return sst.score;
 			}
 		}
 		assert_state();
@@ -1102,24 +1041,7 @@ go infinite
 					};
 
 					internal_move smove(tf, prom);
-					pieceScore += Value::piece[prom];
-					toggleMove();
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					toggleMove();
-					pieceScore -= Value::piece[prom];
-
-					if( score >= beta ) {
-						pieceScore += Value::piece[PAWN | plr];
-						toggleGroupMove();
-
-						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
-						return beta;			// fail-hard beta-cutoff
-					}
-					pvFound = true;
-					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-						alpha = score;	//Better move found!
-						bmove = smove;
-					}
+					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[PAWN | plr])) return sst.score;
 				}
 				toggleGroupMove();
 			}
@@ -1223,21 +1145,8 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
 
-						if( score >= beta ) {
-							pieceScore += Value::piece[captured];
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
 					}
 				}
 				bitboard tmp = Pieces[captured] & KAttack;
@@ -1263,21 +1172,8 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-						if( score >= beta ) {
-							pieceScore += Value::piece[captured];
-							toggleGroupMove();
 
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1304,19 +1200,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 					}
 				}
 				bitboard tmp = KAttack & empty;
@@ -1339,21 +1223,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1385,21 +1255,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							pieceScore += Value::piece[captured];
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
 					}
 				}
 				for ( ; i < firstQueen ; ++i){
@@ -1432,22 +1288,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							pieceScore += Value::piece[captured];
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1476,21 +1317,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							pieceScore += Value::piece[captured];
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
 					}
 				}
 #ifndef NDEBUG
@@ -1526,22 +1353,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							pieceScore += Value::piece[captured];
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1571,21 +1383,7 @@ go infinite
 						};
 
 						internal_move smove(castlingc<plr>::KSCKT);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(castlingc<plr>::KSCKT, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1611,21 +1409,7 @@ go infinite
 						};
 
 						internal_move smove(castlingc<plr>::QSCKT);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(castlingc<plr>::QSCKT, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1649,19 +1433,7 @@ go infinite
 						};
 						
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 					}
 				}
 				for (; i < firstQueen ; ++i) {
@@ -1689,21 +1461,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1724,19 +1482,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 					}
 				}
 				bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
@@ -1764,21 +1510,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1814,19 +1546,7 @@ go infinite
 				};
 
 				internal_move smove(tf, PAWN | plr);
-				toggleMove();
-				searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-				toggleMove();
-
-				if( score >= beta ) {
-					prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
-					return beta;			// fail-hard beta-cutoff
-				}
-				pvFound = true;
-				if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-					alpha = score;	//Better move found!
-					bmove = smove;
-				}
+				if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 			}
 			tmp = pawnsToForward;
 			if (plr == white){
@@ -1856,19 +1576,7 @@ go infinite
 				};
 
 				internal_move smove(tf, PAWN | plr);
-				toggleMove();
-				searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-				toggleMove();
-
-				if( score >= beta ) {
-					prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
-					return beta;			// fail-hard beta-cutoff
-				}
-				pvFound = true;
-				if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-					alpha = score;	//Better move found!
-					bmove = smove;
-				}
+				if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 			}
 			enPassant = bitboard(0);
 		}
@@ -1918,22 +1626,7 @@ go infinite
 							};
 
 							internal_move smove(tf, PAWN | plr);
-							toggleMove();
-							searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-							toggleMove();
-
-							if( score >= beta ) {
-								pieceScore += Value::piece[attacker];
-								toggleGroupMove();
-
-								prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
-								return beta;			// fail-hard beta-cutoff
-							}
-							pvFound = true;
-							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-								alpha = score;	//Better move found!
-								bmove = smove;
-							}
+							if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 						}
 						togglePartial2Move();
 					}
@@ -1966,22 +1659,7 @@ go infinite
 								};
 
 								internal_move smove(tf, PAWN | plr | TTMove_EnPassantPromFlag);
-								toggleMove();
-								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-								toggleMove();
-
-								if( score >= beta ) {
-									pieceScore += Value::piece[attacker];
-									toggleGroupMove();
-
-									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
-									return beta;			// fail-hard beta-cutoff
-								}
-								pvFound = true;
-								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-									alpha = score;	//Better move found!
-									bmove = smove;
-								}
+								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 							}
 							togglePartial2Move();
 						}
@@ -2020,26 +1698,8 @@ go infinite
 								};
 
 								internal_move smove(tf, prom);
-								pieceScore += Value::piece[prom];
-								toggleMove();
-								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-								toggleMove();
-								pieceScore -= Value::piece[prom];
 
-								if( score >= beta ) {
-									pieceScore += Value::piece[attacker];
-									pieceScore += Value::piece[PAWN | plr];
-
-									toggleGroupMove();
-
-									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
-									return beta;			// fail-hard beta-cutoff
-								}
-								pvFound = true;
-								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-									alpha = score;	//Better move found!
-									bmove = smove;
-								}
+								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[attacker]+Value::piece[PAWN | plr])) return sst.score;
 							}
 							togglePartial3Move();
 							pieceScore += Value::piece[PAWN | plr];
@@ -2074,22 +1734,8 @@ go infinite
 					};
 
 					internal_move smove(tf);
-					toggleMove();
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					toggleMove();
 
-					if( score >= beta ) {
-						pieceScore += Value::piece[attacker];
-						toggleGroupMove();
-
-						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-						return beta;			// fail-hard beta-cutoff
-					}
-					pvFound = true;
-					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-						alpha = score;	//Better move found!
-						bmove = smove;
-					}
+					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 				}
 				togglePartial2Move();
 			}
@@ -2117,22 +1763,8 @@ go infinite
 					};
 
 					internal_move smove(tf);
-					toggleMove();
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					toggleMove();
 
-					if( score >= beta ) {
-						pieceScore += Value::piece[attacker];
-						toggleGroupMove();
-
-						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-						return beta;			// fail-hard beta-cutoff
-					}
-					pvFound = true;
-					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-						alpha = score;	//Better move found!
-						bmove = smove;
-					}
+					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 				}
 				togglePartial2Move();
 			}
@@ -2165,22 +1797,8 @@ go infinite
 					};
 
 					internal_move smove(tf);
-					toggleMove();
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					toggleMove();
 
-					if( score >= beta ) {
-						pieceScore += Value::piece[attacker];
-						toggleGroupMove();
-
-						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-						return beta;			// fail-hard beta-cutoff
-					}
-					pvFound = true;
-					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-						alpha = score;	//Better move found!
-						bmove = smove;
-					}
+					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 				}
 				togglePartial2Move();
 			}
@@ -2207,22 +1825,7 @@ go infinite
 					};
 
 					internal_move smove(tf);
-					toggleMove();
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					toggleMove();
-
-					if( score >= beta ) {
-						pieceScore += Value::piece[attacker];
-						toggleGroupMove();
-
-						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-						return beta;			// fail-hard beta-cutoff
-					}
-					pvFound = true;
-					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-						alpha = score;	//Better move found!
-						bmove = smove;
-					}
+					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 				}
 				togglePartial2Move();
 			}
@@ -2301,23 +1904,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							};
 
 							internal_move smove(tf, PAWN | plr | TTMove_EnPassantPromFlag);
-							pieceScore -= Value::piece[PAWN | (!plr)];
-							toggleMove();
-							searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-							toggleMove();
-							pieceScore += Value::piece[PAWN | (!plr)];
 
-							if( score >= beta ) {
-								toggleGroupMove();
-
-								prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
-								return beta;			// fail-hard beta-cutoff
-							}
-							pvFound = true;
-							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-								alpha = score;	//Better move found!
-								bmove = smove;
-							}
+							if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[PAWN | (!plr)], toggleGroupMove, 0)) return sst.score;
 						}
 						toggleGroupMove();
 					}
@@ -2373,22 +1961,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					};
 
 					internal_move smove(tf, PAWN | plr);
-					toggleMove();
-					assert_state();
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					toggleMove();
 
-					if( score >= beta ) {
-						toggleGroupMove();
-
-						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
-						return beta;			// fail-hard beta-cutoff
-					}
-					pvFound = true;
-					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-						alpha = score;	//Better move found!
-						bmove = smove;
-					}
+					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 				}
 				toggleGroupMove();
 			}
@@ -2422,24 +1996,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						};
 
 						internal_move smove(tf, prom);
-						pieceScore += Value::piece[prom];
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
-						pieceScore -= Value::piece[prom];
 
-						if( score >= beta ) {
-							pieceScore += Value::piece[PAWN | plr];
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[PAWN | plr])) return sst.score;
 					}
 					pieceScore += Value::piece[PAWN | plr];
 					togglePartial2Move();
@@ -2465,21 +2023,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					};
 
 					internal_move smove(tf, PAWN | plr);
-					toggleMove();
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					toggleMove();
-
-					if( score >= beta ) {
-						toggleGroupMove();
-
-						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
-						return beta;			// fail-hard beta-cutoff
-					}
-					pvFound = true;
-					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-						alpha = score;	//Better move found!
-						bmove = smove;
-					}
+					
+					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 				}
 				toggleGroupMove();
 			}
@@ -2508,21 +2053,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
 
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -2551,21 +2083,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
 
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -2596,21 +2115,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
 
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -2639,21 +2145,8 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						};
 
 						internal_move smove(tf);
-						toggleMove();
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						toggleMove();
 
-						if( score >= beta ) {
-							toggleGroupMove();
-
-							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-							return beta;			// fail-hard beta-cutoff
-						}
-						pvFound = true;
-						if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-							alpha = score;	//Better move found!
-							bmove = smove;
-						}
+						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -2676,7 +2169,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				bitboard to = pop_lsb(tmp);
 				kingSq      = square(to);
 				bitboard tf = from | to;
-				auto toggleGlobalMove = [this, tf, to, ct, attacker, toggleCastling](){
+				auto toggleGroupMove = [this, tf, to, ct, attacker, toggleCastling](){
 					Pieces[attacker]   ^= to;
 					Pieces[KING | plr] ^= tf;
 					All_Pieces( plr)   ^= tf;
@@ -2684,7 +2177,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					castling           ^= toggleCastling;
 					zobr               ^= ct;
 				};
-				toggleGlobalMove();
+				toggleGroupMove();
 				if (validPosition<plr>(kingSq)){
 					Zobrist toggle = zobrist::keys[KING | plr][fromSq];
 					toggle ^= zobrist::keys[KING | plr][kingSq];
@@ -2695,25 +2188,10 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					};
 
 					internal_move smove(tf);
-					pieceScore -= Value::piece[attacker];
-					toggleMove();
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					toggleMove();
-					pieceScore += Value::piece[attacker];
 
-					if( score >= beta ) {
-						toggleGlobalMove();
-
-						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-						return beta;			// fail-hard beta-cutoff
-					}
-					pvFound = true;
-					if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-						alpha = score;	//Better move found!
-						bmove = smove;
-					}
+					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -Value::piece[attacker], toggleGroupMove, 0)) return sst.score;
 				}
-				toggleGlobalMove();
+				toggleGroupMove();
 			}
 		}
 		halfmoves = oldhm + 1;
@@ -2723,13 +2201,13 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			bitboard to = pop_lsb(tmp);
 			bitboard tf = to | from;
 			kingSq      = square(to);
-			auto toggleGlobalMove = [this, tf, ct, toggleCastling](){
+			auto toggleGroupMove = [this, tf, ct, toggleCastling](){
 				Pieces[KING | plr] ^= tf;
 				All_Pieces(plr)    ^= tf;
 				castling           ^= toggleCastling;
 				zobr               ^= ct;
 			};
-			toggleGlobalMove();
+			toggleGroupMove();
 			if (validPosition<plr>(kingSq)){
 				Zobrist toggle = zobrist::keys[KING | plr][kingSq];
 				toggle        ^= zobrist::keys[KING | plr][fromSq];
@@ -2739,26 +2217,13 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				};
 				
 				internal_move smove(tf);
-				toggleMove();
-				searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-				toggleMove();
 
-				if( score >= beta ) {
-					toggleGlobalMove();
-
-					prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
-					return beta;			// fail-hard beta-cutoff
-				}
-				pvFound = true;
-				if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-					alpha = score;	//Better move found!
-					bmove = smove;
-				}
+				if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 			}
-			toggleGlobalMove();
+			toggleGroupMove();
 		}
 	}
-	while (board_interface->collectNextScore(score, thread_id));
+	while (board_interface->collectNextScore(sst.score, thread_id));
 	halfmoves = oldhm;
 	if (!root) {
 		playing = !plr;
@@ -2767,7 +2232,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 	enPassant = tmpEnPassant;
 	if (enPassant) zobr ^= zobrist::enPassant[enSq];
 	if (plr==black) --fullmoves;
-	if (mode == Perft && depth == dividedepth) {
+	if (mode == Perft && sst.depth == dividedepth) {
 		U64 moves = stats.horizonNodes;
 		moves -= stHorNodes;
 #ifdef DIVIDEPERFT
@@ -2801,28 +2266,28 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		// std::cout << pre << getFEN(plr) << '\t' << moves << std::endl;
 #endif
 	}
-	if (mode == Perft) return alpha + 1;
+	if (mode == Perft) return sst.alpha + 1;
 	if (!interruption_requested){
 		if (mode < quiescenceMask){
 			if (stNodes == stats.nodes){
 				if (checkedBy == bitboard(0)) {
-					alpha = 0;								//PAT
+					sst.alpha = 0;								//PAT
 				} else {
-					alpha = -Value::MAT+rootDepth-depth;	//MATed
+					sst.alpha = -Value::MAT+rootDepth-sst.depth;	//MATed
 				}
-				addTTEntry<ExactScore>(zobr, depth, 0, alpha);//ExactScore
-			} else if (alpha != startingAlpha) {
-				assert(bmove.tf != bitboard(0));
-				addTTEntry<AlphaCutoff>(zobr, depth, getMove<plr>(bmove.tf, bmove.prom), alpha);
+				addTTEntry<ExactScore>(zobr, sst.depth, 0,sst.alpha);//ExactScore
+			} else if (sst.alpha != alpha) {
+				assert(sst.bmove.tf != bitboard(0));
+				addTTEntry<AlphaCutoff>(zobr, sst.depth, getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
 			} else {
-				assert(bmove.tf == bitboard(0));//ExactScore
-				addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, depth, (bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(bmove.tf, bmove.prom), alpha);
+				assert(sst.bmove.tf == bitboard(0));//ExactScore
+				addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
 			}
 		} else {
-			addTTEntry<QSearchAlphaCutoff>(zobr, depth, (bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(bmove.tf, bmove.prom), alpha);
+			addTTEntry<QSearchAlphaCutoff>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
 		}
 	}
-	return alpha;
+	return sst.alpha;
 }
 
 template<color plr> inline int Board::getMove(bitboard tf, int prom) __restrict{
