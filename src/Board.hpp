@@ -190,6 +190,31 @@ constexpr bitboard castlingrights[2] = {0x0000000000000081ull, 0x810000000000000
 
 class Task;
 
+struct node_statistics{
+	U64 horizonNodes;
+	U64 nodes;
+	U64 qNodes;
+
+	inline node_statistics(){
+		reset();
+	}
+
+	inline void reset(){
+		horizonNodes = 0;
+		nodes        = 0;
+		qNodes       = 0;
+	}
+
+	inline node_statistics& operator+=(const node_statistics& other){
+		horizonNodes += horizonNodes;
+		nodes        += nodes;
+		qNodes       += qNodes;
+		return *this;
+	}
+};
+
+extern node_statistics gstats;
+
 extern int rootDepth;
 class Board { //cache_align
 	friend class Task;
@@ -216,11 +241,10 @@ class Board { //cache_align
 		static unsigned int bmem_unused[MAX_BOARDS];
 		static unsigned int bmem_unused_last;
 
-	public:
 		//for Perft
-		U64 horizonNodes;
-		U64 nodes;
-		U64 qNodes;
+		node_statistics stats;
+
+	public:
 		int dividedepth;
 #ifdef DIVIDEPERFT
 		std::string pre;
@@ -499,11 +523,11 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 	//FIXME This is saved as a betaCutOff later in the TT!
 	if (plr==white) if (interruption_requested) return INF; //TODO Revision! does not seem such a good idea :(
 	//count nodes searched
-	++nodes;
+	++stats.nodes;
 	if ((!root) && (mode != Perft) && (mode < quiescenceMask) && (halfmoves >= 100 || threefoldRepetition())) return 0;
 	if (mode >= quiescenceMask){
 		//count nodes searched by quiescence
-		++qNodes;
+		++stats.qNodes;
 		int standPat = getEvaluation<plr>(depth);
 		if (plr == black) standPat = -standPat;
 		if (mated(standPat)) return standPat;
@@ -518,7 +542,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		if (standPat > alpha) alpha = standPat;
 	} else if (depth == 0) {
 		//count horizon nodes reached (Useful for Perft)
-		++horizonNodes;
+		++stats.horizonNodes;
 		if (mode & Perft) {
 			// if (dividedepth == 0) std::cout << pre << getFEN(plr) << '\n';
 			return beta;
@@ -556,8 +580,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 
 	assert_state();
 
-	U64 stNodes (nodes);
-	U64 stHorNodes (horizonNodes);
+	U64 stNodes (stats.nodes);
+	U64 stHorNodes (stats.horizonNodes);
 	int startingAlpha = alpha;
 
 	int score;
@@ -2744,7 +2768,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 	if (enPassant) zobr ^= zobrist::enPassant[enSq];
 	if (plr==black) --fullmoves;
 	if (mode == Perft && depth == dividedepth) {
-		U64 moves = horizonNodes;
+		U64 moves = stats.horizonNodes;
 		moves -= stHorNodes;
 #ifdef DIVIDEPERFT
 		DWORD bytes_read, bytes_written;
@@ -2780,7 +2804,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 	if (mode == Perft) return alpha + 1;
 	if (!interruption_requested){
 		if (mode < quiescenceMask){
-			if (stNodes == nodes){
+			if (stNodes == stats.nodes){
 				if (checkedBy == bitboard(0)) {
 					alpha = 0;								//PAT
 				} else {

@@ -16,66 +16,11 @@
 
 Board Board::bmem[MAX_BOARDS];
 std::mutex Board::bmem_m;
+
+node_statistics gstats;
+
 unsigned int Board::bmem_unused[MAX_BOARDS];
 unsigned int Board::bmem_unused_last = MAX_BOARDS << 1;
-
-const int Value::piece[12] = {100,
-							 -100,
-							  320,
-							 -320,
-							  325,
-							 -325,
-							  500-(Value::rookOnOpenFile/3),
-							 -500+(Value::rookOnOpenFile/3),
-							  975-(Value::rookOnOpenFile/3),
-							 -975+(Value::rookOnOpenFile/3),
-							  Value::MAT,
-							 -Value::MAT};
-
-const int Value::knightSq[64] = {
-					//0,   1,   2,   3,   4,   5,   6,   7
-					-33, -20, -19, -14, -14, -19, -20, -33, //x=0 a
-					-20, -17,   3,  14,  14,   3, -17, -20, //x=1 b
-					-19,   3,  35,  29,  29,  35,   3, -19, //x=2 c
-					-14,  14,  29,  33,  33,  29,  14, -14, //x=3 d
-					-14,  14,  29,  33,  33,  29,  14, -14, //x=4 e
-					-19,   3,  35,  29,  29,  35,   3, -19, //x=5 f
-					-20, -17,   3,  14,  14,   3, -17, -20, //x=6 g
-					-33, -20, -19, -14, -14, -19, -20, -33  //x=7 h
-};
-
-const int Value::kingSq[64] = {
-		 20, 30, 10,  0,  0, 10, 30, 20,
-		 20, 20,  0,  0,  0,  0, 20, 20,
-		-10,-20,-20,-20,-20,-20,-20,-10,
-		-20,-30,-30,-40,-40,-30,-30,-20,
-		-20,-30,-30,-40,-40,-30,-30,-20,
-		-10,-20,-20,-20,-20,-20,-20,-10,
-		 20, 20,  0,  0,  0,  0, 20, 20,
-		 20, 30, 10,  0,  0, 10, 30, 20
-};
-
-const int Value::WpawnSq[64] = {
-		 0,  0,  0,  0,  0,  0,  0,  0,
-		50, 50, 50, 50, 50, 50, 50, 50,
-		10, 10, 20, 30, 30, 20, 10, 10,
-		 5,  5, 10, 25, 25, 10,  5,  5,
-		 0,  0,  0, 20, 20,  0,  0,  0,
-		 5, -5,-10,  0,  0,-10, -5,  5,
-		 5, 10, 10,-20,-20, 10, 10,  5,
-		 0,  0,  0,  0,  0,  0,  0,  0
-};
-
-const int Value::BpawnSq[64] = {
-		 0,  0,  0,  0,  0,  0,  0,  0,
-		 5, 10, 10,-20,-20, 10, 10,  5,
-		 5, -5,-10,  0,  0,-10, -5,  5,
-		 0,  0,  0, 20, 20,  0,  0,  0,
-		 5,  5, 10, 25, 25, 10,  5,  5,
-		10, 10, 20, 30, 30, 20, 10, 10,
-		50, 50, 50, 50, 50, 50, 50, 50,
-		 0,  0,  0,  0,  0,  0,  0,  0
-};
 
 std::atomic<bool> interruption_requested;
 
@@ -522,9 +467,8 @@ void Board::printHistory(){
 
 U64 Board::perft(int depth){
 	interruption_requested = false;
-	horizonNodes = 0;
-	qNodes = 0;
-	nodes = 0;
+	gstats.reset();
+	stats.reset();
 	key oldZobr = zobr;
 	bitboard oldep = enPassant;
 	int oldhm = halfmoves;
@@ -564,13 +508,13 @@ U64 Board::perft(int depth){
 	if (oldlhe != lastHistoryEntry) {std::cout << oldlhe << "|lhe" << lastHistoryEntry << std::endl; failed = true;}
 	if (psc != pieceScore) {std::cout << psc << "|pS" << pieceScore << std::endl; failed = true;}
 	if (failed) return 0;
-	return horizonNodes;
+	return gstats.horizonNodes + stats.horizonNodes;
 }
 
 int Board::test(int depth){
-	horizonNodes = 0;
-	qNodes = 0;
-	nodes = 0;
+	gstats.horizonNodes = 0;
+	gstats.qNodes = 0;
+	gstats.nodes = 0;
 	key oldZobr = zobr;
 	bitboard oldep = enPassant;
 	int oldhm = halfmoves;
@@ -633,6 +577,8 @@ int Board::test(int depth){
 
 void Board::go(int maxDepth, time_control tc){
 	interruption_requested = false;
+	gstats.reset();
+	stats.reset();
 	TimeManager<> tm(tc, (playing == white) ? WHITE : BLACK, &interruption_requested);
 
 	int depth = (STARTING_DEPTH < maxDepth) ? STARTING_DEPTH : 1; //STARTING_DEPTH
@@ -641,7 +587,7 @@ void Board::go(int maxDepth, time_control tc){
 	int move = 0;
 	int score = 0;
 	int matdcycles = 0;
-	U64 stNodes = nodes;
+	U64 stNodes = gstats.nodes;
 	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
 	while ((depth <= maxDepth && (!move || tm.continue_search(ELAPSED_TIME_FACTOR)) && matdcycles < 3)){
 		rootDepth = depth;
@@ -662,8 +608,8 @@ void Board::go(int maxDepth, time_control tc){
 		std::cout << "info";
 		std::cout << " depth " << depth;
 		std::cout << " time " << etime.count();
-		std::cout << " nodes " << nodes-stNodes;
-		if (etime.count() >= 1000) std::cout << " nps " << (U64) (((nodes-stNodes)*1000ull) / (etime / 1000.0).count());
+		std::cout << " nodes " << gstats.nodes-stNodes;
+		if (etime.count() >= 1000) std::cout << " nps " << (U64) (((gstats.nodes-stNodes)*1000ull) / (etime / 1000.0).count());
 
 		Board * extrPv = new Board(this);
 		std::cout << " pv " << extrPv->extractPV(depth);
@@ -709,7 +655,7 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 	int move = 0;
 	int score = 0;
 	int matdcycles = 0;
-	U64 stNodes = nodes;
+	U64 stNodes = gstats.nodes;
 	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
 	Board * extrPv = NULL;
 	while (depth <= maxDepth && (infinitiveSearch || ((searchEndTime - get_current_time()) > elapsedTime*ELAPSED_TIME_FACTOR)) && matdcycles < 3){
@@ -733,11 +679,11 @@ void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, 
 #else
 		std::cout << " time " << (elapsedTime.count()/1000);
 #endif
-		std::cout << " nodes " << nodes-stNodes;
+		std::cout << " nodes " << gstats.nodes-stNodes;
 #if defined _MSC_VER && _MSC_VER <= 1600
-		if (elapsedTime.total_milliseconds() != 0ull) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.total_milliseconds());
+		if (elapsedTime.total_milliseconds() != 0ull) std::cout << " nps " << ((gstats.nodes-stNodes)*1000ull) / (elapsedTime.total_milliseconds());
 #else
-		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000.0);
+		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((gstats.nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000.0);
 #endif
 		extrPv = new Board(this);
 		std::cout << " pv " << extrPv->extractPV(depth);
@@ -865,6 +811,8 @@ void Board::operator delete(void * p){
 	bmem_unused[bmem_unused_last++] = (((Board *) p) - bmem);
 	assert((((Board *) p) - bmem) < (MAX_BOARDS));
 	assert(bmem_unused_last <= MAX_BOARDS);
+	gstats += ((Board *) p)->stats;
+	((Board *) p)->stats.reset();
 }
 
 

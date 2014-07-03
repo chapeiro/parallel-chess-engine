@@ -148,13 +148,14 @@ bool pvtestInterface(string input, time_t &totalTime, unsigned long long int &to
 	time_t st = time(NULL);
 	//FIXME depth
 	res = board->test(depth);
+	delete board;
 	st = time(NULL) - st;
 	totalTime += st;
-	totalNodes += board->nodes;
-	totalLeafNodes += board->horizonNodes;
+	totalNodes += gstats.nodes;
+	totalLeafNodes += gstats.horizonNodes;
 	cout << "\tscore : \t" << res;
 	if (st != 0){
-		cout << "\t(leafNPS :\t" << board->horizonNodes/st << "\t, NPS :\t" << board->nodes/st << "\t)";
+		cout << "\t(leafNPS :\t" << gstats.horizonNodes/st << "\t, NPS :\t" << gstats.nodes/st << "\t)";
 	}
 	if (mode == 'D'){
 		cout << endl;
