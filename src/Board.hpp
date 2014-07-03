@@ -182,7 +182,7 @@ public:
 	static constexpr bitboard QSCFT 				= (plr == WHITE) ? 0x00000000000000B8ull : 0xB800000000000000ull;
 	static constexpr bitboard deactrights 			= (plr == WHITE) ? 0xFFFFFFFFFFFFFF7Eull : 0x7EFFFFFFFFFFFFFFull;
 };
-constexpr bitboard castlingsmagic    = 0x8100000000000081ull;
+constexpr bitboard castlingsmagic    = 0x1040000000000041ull;//0x8100000000000081ull;
 constexpr bitboard allcastlingrights = 0x8100000000000081ull;
 constexpr bitboard castlingrights[2] = {0x0000000000000081ull, 0x8100000000000000ull};
 
@@ -320,7 +320,7 @@ class Board { //cache_align
 		template<SearchMode mode, color plr> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict;
 		template<color plr> int quieSearch(int alpha, int beta) __restrict;
 
-		template<SearchMode mode, color plr> void prepare_beta_cutoff(int oldhm, bitboard old_enpassant, int enSq, int move_entry, int depth, int beta) __restrict;
+		template<SearchMode mode, color plr, bool root> void prepare_beta_cutoff(int oldhm, bitboard old_enpassant, int enSq, int move_entry, int depth, int beta) __restrict;
 
 		bool threefoldRepetition() __restrict;
 };
@@ -340,7 +340,7 @@ inline void Board::internal_move::set(bitboard tf) __restrict{
 
 inline int Board::getPieceIndex(char p) __restrict{
 	if (p > 'a') return getWhitePieceIndex(p-'a'+'A') | BLACK;
-	return getWhitePieceIndex(p) | white;
+	return getWhitePieceIndex(p) | WHITE;
 }
 
 inline void Board::updatePieces(int sq, int ind) __restrict{
@@ -361,7 +361,7 @@ inline void Board::removeLastHistoryEntry() __restrict{
 template<color plr> inline void Board::deactivateCastlingRights() __restrict{
 	bitboard oldc = castling;
 	castling &= castlingc<plr>::deactrights;
-	zobr ^= zobrist::castling[((castling^oldc)*castlingsmagic)>>59];
+	zobr ^= zobrist::castling[((castling^oldc)*castlingsmagic)>>60];
 }
 
 inline void Board::togglePlaying() __restrict{
@@ -448,6 +448,7 @@ template<color plr> inline bool Board::validPosition(int kingSq) __restrict{
 
 template<SearchMode mode, color plr> inline void Board::searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict{
 	addToHistory(zobr);
+	assert_state();
 	if (mode >= quiescenceMask){
 		score = -search<mode, plr, false>(-beta, -alpha, depth - 1);
 	} else if (mode == PV){
@@ -470,10 +471,13 @@ template<SearchMode mode, color plr> inline void Board::searchDeeper(int alpha, 
 	removeLastHistoryEntry();
 }
 
-template<SearchMode mode, color plr>
+template<SearchMode mode, color plr, bool root>
 inline void Board::prepare_beta_cutoff(int oldhm, bitboard old_enpassant, int enSq, int depth, int move_entry, int beta) __restrict{
 	halfmoves = oldhm;
-	zobr ^= zobrist::blackKey;
+	if (!root) {
+		playing = !plr;
+		zobr   ^= zobrist::blackKey;
+	}
 	enPassant = old_enpassant;
 	if (enPassant) zobr ^= zobrist::enPassant[enSq];
 	if (plr==black) --fullmoves;
@@ -533,15 +537,24 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 	}
 #endif
 
+	assert_state();
 	//move state forward (halfmoves (oldhm), fullmoves (fullmoves+{0, 1}(plr)), enPassant (tmpEnPassant)
 	int oldhm (halfmoves);
 	unsigned long int enSq = square( enPassant ) & 7;
+
+	assert_state();
 	if (enPassant) zobr ^= zobrist::enPassant[enSq];
 	bitboard tmpEnPassant (enPassant);
 	fullmoves += plr;							//if (plr==black) ++fullmoves;
 	enPassant = bitboard(0);
 	halfmoves = 0;
-	zobr ^= zobrist::blackKey;
+	assert_state();
+	if (!root) {
+		playing = plr;
+		zobr   ^= zobrist::blackKey;
+	}
+
+	assert_state();
 
 	U64 stNodes (nodes);
 	U64 stHorNodes (horizonNodes);
@@ -551,7 +564,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 	bool pvFound = false;
 
 	internal_move bmove(0, 0);
-
+	assert_state();
 	unsigned long int kingSq = square(Pieces[KING | plr]);
 #ifndef NDEBUG
 	bitboard oldP[(KING | black)+1];
@@ -585,89 +598,102 @@ go infinite
 			if (((killerTo & All_Pieces(plr)) == bitboard(0)) && (All_Pieces(plr) & killerFrom)){
 				if ((Pieces[PAWN | plr] & killerFrom) == bitboard(0)){
 					int killerPiece = KNIGHT | plr;
-					while ((Pieces[killerPiece] & killerFrom) == bitboard(0)) killerPiece += 2;
+					while (!(Pieces[killerPiece] & killerFrom)) killerPiece += 2;
 					if ((killerPiece == (KING | plr)) && ((KingMoves[killerFromSq] & killerTo) == bitboard(0))){
 						halfmoves = oldhm + 1;
-						Pieces[KING | plr] = killerTo;
-						bitboard oldCastling = castling;
-						key ct = zobrist::castling[(castling*castlingsmagic)>>59];
-						castling &= castlingc<plr>::deactrights;
-						Zobrist toggle = ct;
-						toggle ^= zobrist::keys[KING | plr][3+((plr==black)?56:0)];
-						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
-						internal_move smove(0);
+
+						bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
+						
+						Zobrist toggle = zobrist::keys[KING | plr][3+((plr==black)?56:0)];
+						toggle ^= zobrist::castling[(castling*castlingsmagic)>>60];
+						toggle ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
+						
 						if (killerFrom > killerTo) {
-							if ((oldCastling & castlingc<plr>::KingSide & Pieces[ROOK | plr]) && ((castlingc<plr>::KingSideSpace & occ) == 0)){
-								kingSq = castlingc<plr>::kingSqAfterKSC;
+							if ((castling & castlingc<plr>::KingSide & Pieces[ROOK | plr]) && ((castlingc<plr>::KingSideSpace & occ) == 0)){
 								toggle ^= zobrist::keys[ROOK | plr][0+((plr==black)?56:0)];
 								toggle ^= zobrist::keys[ROOK | plr][2+((plr==black)?56:0)];
 								toggle ^= zobrist::keys[KING | plr][1+((plr==black)?56:0)];
-								auto toggleMove = [this, toggle](){
+								auto toggleMove = [this, toggle, toggleCastling](){
+									Pieces[KING | plr] ^= castlingc<plr>::KSCKT;
 									Pieces[ROOK | plr] ^= castlingc<plr>::KSCRT;
 									All_Pieces(plr)    ^= castlingc<plr>::KSCFT;
-									zobr ^= toggle;
+									zobr               ^= toggle;
+									castling           ^= toggleCastling;
 								};
-								smove.set(castlingc<plr>::KSCKT);
+								
+								internal_move smove(castlingc<plr>::KSCKT);
 								toggleMove();
 								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
 								toggleMove();
+
+								if( score >= beta ) {
+									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
+									statistics(++cutOffByKillerMove);
+									return beta;			// fail-hard beta-cutoff
+								}
+								pvFound = true;
+								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
+									alpha = score;	//Better move found!
+									bmove = smove;
+								}
 							} else {
 								statistics(++ttError_Type1_SameHashKey);
 								killerMoveOk = false;
 							}
 						} else {
-							if ((oldCastling & castlingc<plr>::QueenSide & Pieces[ROOK | plr]) && ((castlingc<plr>::QueenSideSpace & occ) == 0)){
-								kingSq = castlingc<plr>::kingSqAfterQSC;
+							if ((castling & castlingc<plr>::QueenSide & Pieces[ROOK | plr]) && ((castlingc<plr>::QueenSideSpace & occ) == 0)){
 								toggle ^= zobrist::keys[ROOK | plr][7+((plr==black)?56:0)];
 								toggle ^= zobrist::keys[ROOK | plr][4+((plr==black)?56:0)];
 								toggle ^= zobrist::keys[KING | plr][5+((plr==black)?56:0)];
-								auto toggleMove = [this, toggle](){
+								auto toggleMove = [this, toggle, toggleCastling](){
+									Pieces[KING | plr] ^= castlingc<plr>::QSCKT;
 									Pieces[ROOK | plr] ^= castlingc<plr>::QSCRT;
 									All_Pieces(plr)    ^= castlingc<plr>::QSCFT;
-									zobr                 ^= toggle;
+									zobr               ^= toggle;
+									castling           ^= toggleCastling;
 								};
-								smove.set(castlingc<plr>::QSCKT);
+
+								internal_move smove(castlingc<plr>::QSCKT);
 								toggleMove();
 								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
 								toggleMove();
+
+								if( score >= beta ) {
+									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
+									statistics(++cutOffByKillerMove);
+									return beta;			// fail-hard beta-cutoff
+								}
+								pvFound = true;
+								if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
+									alpha = score;	//Better move found!
+									bmove = smove;
+								}
 							} else {
 								statistics(++ttError_Type1_SameHashKey);
 								killerMoveOk = false;
 							}
 						}
-						zobr ^= toggle;
-						Pieces[KING | plr] = killerFrom;
-						castling = oldCastling;
-						if (killerMoveOk) {
-							if( score >= beta ) {
-								prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
-								statistics(++cutOffByKillerMove);
-								return beta;			// fail-hard beta-cutoff
-							}
-							pvFound = true;
-							if( ( mode == PV || mode >= quiescenceMask ) && score > alpha ){
-								alpha = score;	//Better move found!
-								bmove = smove;
-							}
-						}
 						halfmoves = 0;
-						kingSq = castlingc<plr>::kingSqBefore;
 					} else {
 						int capturedPiece = QUEEN | (!plr);
 						while (capturedPiece >= 0 && !(Pieces[capturedPiece] & killerTo)) capturedPiece -= 2;
 						bitboard tf = killerFrom | killerTo;
+
 						Zobrist toggle = zobrist::keys[killerPiece][killerFromSq];
-						toggle ^= zobrist::keys[killerPiece][killerToSq];
-						bitboard oldCastling = castling;
+						toggle        ^= zobrist::keys[killerPiece][killerToSq];
+						
+						bitboard toggleCastling(0);
+
 						if (killerPiece == (ROOK | plr)) {
-							toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
-							castling &= ~killerFrom;
-							toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
+							toggle ^= zobrist::castling[(castling*castlingsmagic)>>60];
+							toggleCastling = castling & killerFrom;
+							toggle ^= zobrist::castling[((castling ^ toggleCastling)*castlingsmagic)>>60];
 						} else if (killerPiece == (KING | plr)){
-							toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
-							castling &= castlingc<plr>::deactrights;
-							toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
+							toggle ^= zobrist::castling[(castling*castlingsmagic)>>60];
+							toggleCastling = castling & ~castlingc<plr>::deactrights;
+							toggle ^= zobrist::castling[((castling ^ toggleCastling)*castlingsmagic)>>60];
 						}
+
 						int scoreD = 0;
 						if (capturedPiece >= 0){
 							halfmoves = 0;
@@ -676,24 +702,26 @@ go infinite
 						} else {
 							halfmoves = oldhm + 1;
 						}
-						auto toggleMove = [this, toggle, killerPiece, tf, capturedPiece, killerTo](){
+						auto toggleMove = [this, toggle, killerPiece, tf, capturedPiece, killerTo, toggleCastling](){
 							Pieces[killerPiece] ^= tf;
-							All_Pieces(plr) ^= tf;
-							zobr ^= toggle;
+							All_Pieces(plr)     ^= tf;
+							zobr                ^= toggle;
+							castling            ^= toggleCastling;
 							if (capturedPiece >= 0){
 								Pieces[capturedPiece] ^= killerTo;
-								All_Pieces(!plr) ^= killerTo;
+								All_Pieces(!plr)      ^= killerTo;
 							}
 						};
+
 						internal_move smove(tf, 0);
 						pieceScore -= scoreD;
 						toggleMove();
 						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
 						toggleMove();
 						pieceScore += scoreD;
-						castling = oldCastling;
+
 						if( score >= beta ) {
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
 							statistics(++cutOffByKillerMove);
 							return beta;			// fail-hard beta-cutoff
 						}
@@ -743,28 +771,25 @@ go infinite
 								Zobrist toggle = zobrist::keys[capturedPiece][capturedSq];
 								toggle ^= zobrist::keys[PAWN | plr][killerFromSq];
 								toggle ^= zobrist::keys[toPiece][killerToSq];
-								//ASSUME((promSp <= 0xF) || (Pieces[capturedPiece] & capturedPos));
-								//ASSUME((promSp > 0xF) || (Pieces[capturedPiece] & capturedPos));
-								Pieces[capturedPiece] ^= capturedPos;
+
+								auto toggleMove = [this, toggle, capturedPiece, capturedPos, killerFrom, killerTo, toPiece, tf](){
+									Pieces[capturedPiece] ^= capturedPos;
+									Pieces[PAWN | plr]    ^= killerFrom;
+									Pieces[toPiece]       ^= killerTo;
+									All_Pieces( plr)      ^= tf;
+									All_Pieces(!plr)      ^= capturedPos;
+									zobr                  ^= toggle;
+								};
 								//ASSUME(Pieces[PAWN | plr] & killerFrom);
-								Pieces[PAWN | plr] ^= killerFrom;
 								//ASSUME((Pieces[toPiece] & killerTo)==0);
-								Pieces[toPiece] ^= killerTo;
-								All_Pieces(plr) ^= tf;
-								All_Pieces(!plr) ^= capturedPos;
-								pieceScore -= scoreD;
-								zobr ^= toggle;
 								internal_move smove(tf, promSp);
+								pieceScore -= scoreD;
+								toggleMove();
 								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-								zobr ^= toggle;
+								toggleMove();
 								pieceScore += scoreD;
-								Pieces[capturedPiece] ^= capturedPos;
-								Pieces[PAWN | plr] ^= killerFrom;
-								Pieces[toPiece] ^= killerTo;
-								All_Pieces(plr) ^= tf;
-								All_Pieces(!plr) ^= capturedPos;
 								if( score >= beta ) {
-									prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
+									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
 									statistics(++cutOffByKillerMove);
 									return beta;			// fail-hard beta-cutoff
 								}
@@ -787,20 +812,23 @@ go infinite
 							ASSUME(toPiece <= (KING | black));
 							ASSUME((toPiece & colormask) == plr);
 							ASSUME((Pieces[toPiece] & killerTo) == 0);
-							Pieces[PAWN | plr] ^= killerFrom;
-							Pieces[toPiece] ^= killerTo;
-							All_Pieces(plr) ^= tf;
-							pieceScore -= scoreD;
-							zobr ^= toggle;
+
+							auto toggleMove = [this, toggle, toPiece, killerFrom, killerTo, tf](){
+								Pieces[PAWN | plr] ^= killerFrom;
+								Pieces[toPiece]    ^= killerTo;
+								All_Pieces(plr)    ^= tf;
+								zobr               ^= toggle;
+							};
+
 							internal_move smove(tf, promSp);
+							pieceScore -= scoreD;
+							toggleMove();
 							searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-							zobr ^= toggle;
+							toggleMove();
 							pieceScore += scoreD;
-							Pieces[PAWN | plr] ^= killerFrom;
-							Pieces[toPiece] ^= killerTo;
-							All_Pieces(plr) ^= tf;
+
 							if( score >= beta ) {
-								prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
+								prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, killerMove, beta);
 								statistics(++cutOffByKillerMove);
 								return beta;			// fail-hard beta-cutoff
 							}
@@ -856,42 +884,49 @@ go infinite
 			attacking[1] >>= 7;
 			attacking[1] &= notfile7 & lastRank_b;
 		}
-		pieceScore -= Value::piece[PAWN | plr];
+		assert_state();
+		int scoreD = -Value::piece[PAWN | plr];
 		for (int captured = QUEEN | (!plr); captured >= 0 ; captured-=2){
-			pieceScore -= Value::piece[captured];
+			scoreD -= Value::piece[captured];
 			for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 				bitboard tmp = attacking[at] & Pieces[captured];
+
 				while (tmp){
 					bitboard to = pop_lsb(tmp);
 					bitboard from((plr==white)?(to >> diff):(to << -diff));
 					bitboard tf = to | from;
-					Pieces[captured] ^= to;
-					All_Pieces(plr) ^= tf;
-					All_Pieces(!plr) ^= to;
-					Pieces[PAWN | plr] ^= from;
 					unsigned long int toSq = square(to);
 					Zobrist toggle = zobrist::keys[captured][toSq];
 					toggle ^= zobrist::keys[PAWN | plr][toSq-diff];
-					zobr ^= toggle;
-					for (int prom = QUEEN | plr; prom > (PAWN | colormask) ; prom -= 2){
-						Pieces[prom] ^= to;
-						pieceScore += Value::piece[prom];
-						zobr ^= zobrist::keys[prom][toSq];
-						internal_move smove(tf, prom);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= zobrist::keys[prom][toSq];
-						pieceScore -= Value::piece[prom];
-						Pieces[prom] ^= to;
-						if( score >= beta ) {
-							Pieces[captured] ^= to;
-							zobr ^= toggle;
-							Pieces[PAWN | plr] ^= from;
-							All_Pieces(plr) ^= tf;
-							All_Pieces(!plr) ^= to;
-							pieceScore += Value::piece[PAWN | plr];
-							pieceScore += Value::piece[captured];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
+					auto toggleGroupMove = [this, toggle, captured, to, tf, from](){
+						Pieces[captured]   ^= to;
+						Pieces[PAWN | plr] ^= from;
+						All_Pieces( plr)   ^= tf;
+						All_Pieces(!plr)   ^= to;
+						zobr               ^= toggle;
+					};
+
+					toggleGroupMove();
+					for (int prom = QUEEN | plr; prom > (PAWN | colormask) ; prom -= 2){
+						scoreD += Value::piece[prom];
+
+						auto toggleMove = [this, toggle, prom, to, toSq](){
+							Pieces[prom] ^= to;
+							zobr         ^= zobrist::keys[prom][toSq];
+						};
+
+						internal_move smove(tf, prom);
+						pieceScore += scoreD;
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+						pieceScore -= scoreD;
+
+						if( score >= beta ) {
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -899,17 +934,15 @@ go infinite
 							alpha = score;	//Better move found!
 							bmove = smove;
 						}
+
+						scoreD -= Value::piece[prom];
 					}
-					zobr ^= toggle;
-					Pieces[captured] ^= to;
-					All_Pieces(plr) ^= tf;
-					All_Pieces(!plr) ^= to;
-					Pieces[PAWN | plr] ^= from;
+					toggleGroupMove();
 				}
 			}
-			pieceScore += Value::piece[captured];
+			scoreD += Value::piece[captured];
 		}
-		pieceScore += Value::piece[PAWN | plr];
+		assert_state();
 		attacking[0] = attacking[1] = Pieces[PAWN | plr];
 		if (plr==white){
 			attacking[0] &= nPinnedPawn | filled::antiDiag[kingAD];
@@ -926,8 +959,10 @@ go infinite
 			attacking[1] >>= 7;
 			attacking[1] &= notfile7 & notlastRank_b;
 		}
+		assert_state();
 		for (int captured = QUEEN | (!plr); captured >= 0 ; captured-=2){
-			pieceScore -= Value::piece[captured];
+			int scoreGD = Value::piece[captured];
+			pieceScore -= scoreGD;
 			for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 				bitboard tmp = attacking[at] & Pieces[captured];
 				while (tmp){
@@ -938,22 +973,24 @@ go infinite
 					Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
 					toggle ^= zobrist::keys[PAWN | plr][toSq-diff];
 					toggle ^= zobrist::keys[captured][toSq];
-					Pieces[PAWN | plr] ^= tf;
-					Pieces[captured] ^= to;
-					All_Pieces(plr) ^= tf;
-					All_Pieces(!plr) ^= to;
-					zobr ^= toggle;
-					internal_move smove(tf, PAWN | plr);
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					zobr ^= toggle;
-					Pieces[PAWN | plr] ^= tf;
-					Pieces[captured] ^= to;
-					All_Pieces(plr) ^= tf;
-					All_Pieces(!plr) ^= to;
-					if( score >= beta ) {
-						pieceScore += Value::piece[captured];
 
-						prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
+					auto toggleMove = [this, toggle, tf, to, captured](){
+						Pieces[PAWN | plr] ^= tf;
+						Pieces[captured]   ^= to;
+						All_Pieces( plr)   ^= tf;
+						All_Pieces(!plr)   ^= to;
+						zobr               ^= toggle;
+					};
+
+					internal_move smove(tf, PAWN | plr);
+					toggleMove();
+					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+					toggleMove();
+
+					if( score >= beta ) {
+						pieceScore += scoreGD;
+
+						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
 						return beta;			// fail-hard beta-cutoff
 					}
 					pvFound = true;
@@ -963,8 +1000,9 @@ go infinite
 					}
 				}
 			}
-			pieceScore += Value::piece[captured];
+			pieceScore += scoreGD;
 		}
+		assert_state();
 		for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 			if ((attacking[at] & tmpEnPassant) != 0){
 				bitboard tf = tmpEnPassant;
@@ -978,24 +1016,25 @@ go infinite
 				}
 				unsigned long int toSq = square(tmpEnPassant);
 				Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
-				toggle ^= zobrist::keys[PAWN | plr][toSq-diff];
-				toggle ^= zobrist::keys[PAWN | (!plr)][(toSq+(plr==white))?-8:8];
-				pieceScore -= Value::piece[PAWN | (!plr)];
-				Pieces[PAWN | plr] ^= tf;
-				Pieces[PAWN | (!plr)] ^= cp;
-				All_Pieces(plr) ^= tf;
-				All_Pieces(!plr) ^= cp;
-				zobr ^= toggle;
+				toggle ^= zobrist::keys[PAWN |   plr ][toSq-diff];
+				toggle ^= zobrist::keys[PAWN | (!plr)][toSq+((plr==white)?-8:8)];
+				auto toggleMove = [this, toggle, tf, cp](){
+					Pieces[PAWN |   plr ] ^= tf;
+					Pieces[PAWN | (!plr)] ^= cp;
+					All_Pieces( plr)      ^= tf;
+					All_Pieces(!plr)      ^= cp;
+					zobr                  ^= toggle;
+				};
+
 				internal_move smove(tf,  PAWN | plr | TTMove_EnPassantPromFlag);
+				pieceScore -= Value::piece[PAWN | (!plr)];
+				toggleMove();
 				searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-				zobr ^= toggle;
-				Pieces[PAWN | plr] ^= tf;
-				Pieces[PAWN | (!plr)] ^= cp;
-				All_Pieces(plr) ^= tf;
-				All_Pieces(!plr) ^= cp;
+				toggleMove();
 				pieceScore += Value::piece[PAWN | (!plr)];
+
 				if( score >= beta ) {
-					prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
+					prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
 					return beta;			// fail-hard beta-cutoff
 				}
 				pvFound = true;
@@ -1005,6 +1044,7 @@ go infinite
 				}
 			}
 		}
+		assert_state();
 		bitboard empty = ~occ;
 		bitboard pawnsToForward = Pieces[PAWN | plr];
 		if (mode < quiescenceMask){
@@ -1019,33 +1059,36 @@ go infinite
 			pieceScore -= Value::piece[PAWN | plr];
 			while (tmp){
 				bitboard to = pop_lsb(tmp);
-				bitboard from = to;
-				if (plr == white){
-					from >>= 8;
-				} else {
-					from <<= 8;
-				}
+				bitboard from = (plr == white) ? (to >> 8) : (to << 8);
 				bitboard tf = to | from;
 				unsigned long int toSq = square(to);
-				All_Pieces(plr) ^= tf;
-				Pieces[PAWN | plr] ^= from;
-				zobr ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
+
+				auto toggleGroupMove = [this, tf, toSq, from](){
+					All_Pieces(plr)    ^= tf;
+					Pieces[PAWN | plr] ^= from;
+					zobr ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
+				};
+
+				toggleGroupMove();
 				for (int prom = QUEEN | plr; prom > (PAWN | colormask) ; prom -= 2){
-					Pieces[prom] ^= to;
-					pieceScore += Value::piece[prom];
-					zobr ^= zobrist::keys[prom][toSq];
+
+					auto toggleMove = [this, prom, toSq, to](){
+						Pieces[prom] ^= to;
+						zobr ^= zobrist::keys[prom][toSq];
+					};
+
 					internal_move smove(tf, prom);
+					pieceScore += Value::piece[prom];
+					toggleMove();
 					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					zobr ^= zobrist::keys[prom][toSq];
+					toggleMove();
 					pieceScore -= Value::piece[prom];
-					Pieces[prom] ^= to;
+
 					if( score >= beta ) {
 						pieceScore += Value::piece[PAWN | plr];
-						Pieces[PAWN | plr] ^= from;
-						All_Pieces(plr) ^= tf;
-						zobr ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
+						toggleGroupMove();
 
-						prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
+						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
 						return beta;			// fail-hard beta-cutoff
 					}
 					pvFound = true;
@@ -1054,12 +1097,11 @@ go infinite
 						bmove = smove;
 					}
 				}
-				zobr ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
-				Pieces[PAWN | plr] ^= from;
-				All_Pieces(plr) ^= tf;
+				toggleGroupMove();
 			}
 			pieceScore += Value::piece[PAWN | plr];
 		}
+		assert_state();
 #ifdef HYPERPOSITION
 #define SIZE 64
 #else
@@ -1131,7 +1173,9 @@ go infinite
 		//fromSq[n] = kingSq[plr];//square(frombb[n]);
 		//attack[n] = KingMoves[kingSq[plr]]; KAttack
 		//n : position of last bitboard generated
+		assert_state();
 		if ((castling & castlingrights[plr]) == 0){
+			assert_state();
 			for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 				pieceScore -= Value::piece[captured];
 				for (unsigned long int i = 0 ; i < n ; ++i) {
@@ -1141,25 +1185,28 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
+						unsigned int mpiece = dt[i].piecet;
 						Zobrist toggle = zobrist::keys[captured][toSq];
-						toggle ^= zobrist::keys[dt[i].piecet][toSq];
-						toggle ^= zobrist::keys[dt[i].piecet][fromSq];
-						Pieces[captured] ^= to;
-						Pieces[dt[i].piecet] ^= tf;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= to;
-						zobr ^= toggle;
+						toggle ^= zobrist::keys[mpiece][toSq];
+						toggle ^= zobrist::keys[mpiece][fromSq];
+
+						auto toggleMove = [this, toggle, tf, to, captured, mpiece](){
+							Pieces[captured] ^= to;
+							Pieces[mpiece]   ^= tf;
+							All_Pieces( plr) ^= tf;
+							All_Pieces(!plr) ^= to;
+							zobr             ^= toggle;
+						};
+
 						internal_move smove(tf);
+						toggleMove();
 						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[captured] ^= to;
-						Pieces[dt[i].piecet] ^= tf;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= to;
+						toggleMove();
+
 						if( score >= beta ) {
 							pieceScore += Value::piece[captured];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1174,26 +1221,32 @@ go infinite
 					bitboard to = pop_lsb(tmp);
 					unsigned long int nkSq = square(to);
 					bitboard tf = to | Pieces[KING | plr];
-					Pieces[captured] ^= to;
-					Pieces[KING | plr] ^= tf;
-					All_Pieces(plr) ^= tf;
-					All_Pieces(!plr) ^= to;
-					if (validPosition<plr>(nkSq)){
-						Zobrist toggle = zobrist::keys[captured][kingSq];
-						toggle ^= zobrist::keys[KING | plr][kingSq];
-						toggle ^= zobrist::keys[KING | plr][nkSq];
-						zobr ^= toggle;
-						internal_move smove(tf);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						if( score >= beta ) {
-							Pieces[captured] ^= to;
-							Pieces[KING | plr] ^= tf;
-							All_Pieces(plr) ^= tf;
-							All_Pieces(!plr) ^= to;
-							pieceScore += Value::piece[captured];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+					auto toggleGroupMove = [this, to, tf, captured](){
+						Pieces[captured]   ^= to;
+						Pieces[KING | plr] ^= tf;
+						All_Pieces( plr)   ^= tf;
+						All_Pieces(!plr)   ^= to;
+					};
+					toggleGroupMove();
+					if (validPosition<plr>(nkSq)){
+						Zobrist toggle = zobrist::keys[captured][nkSq];
+						toggle        ^= zobrist::keys[KING | plr][kingSq];
+						toggle        ^= zobrist::keys[KING | plr][nkSq];
+
+						auto toggleMove = [this, toggle](){
+							zobr ^= toggle;
+						};
+
+						internal_move smove(tf);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+						if( score >= beta ) {
+							pieceScore += Value::piece[captured];
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1202,14 +1255,11 @@ go infinite
 							bmove = smove;
 						}
 					}
-					Pieces[captured] ^= to;
-					Pieces[KING | plr] ^= tf;
-					All_Pieces(plr) ^= tf;
-					All_Pieces(!plr) ^= to;
+					toggleGroupMove();
 				}
 				pieceScore += Value::piece[captured];
 			}
-
+			assert_state();
 			if (mode < quiescenceMask){
 				halfmoves = oldhm + 1;
 				for (unsigned long int i = 0 ; i < n ; ++i) {
@@ -1219,18 +1269,23 @@ go infinite
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[dt[i].piecet][toSq];
-						toggle ^= zobrist::keys[dt[i].piecet][fromSq];
-						All_Pieces(plr) ^= tf;
-						Pieces[dt[i].piecet] ^= tf;
-						zobr ^= toggle;
+						unsigned int mpiece = dt[i].piecet;
+						Zobrist toggle = zobrist::keys[mpiece][toSq];
+						toggle ^= zobrist::keys[mpiece][fromSq];
+
+						auto toggleMove = [this, toggle, tf, mpiece](){
+							All_Pieces(plr) ^= tf;
+							Pieces[mpiece]  ^= tf;
+							zobr ^= toggle;
+						};
+
 						internal_move smove(tf);
+						toggleMove();
 						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[dt[i].piecet] ^= tf;
-						All_Pieces(plr) ^= tf;
+						toggleMove();
+
 						if( score >= beta ) {
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1245,20 +1300,29 @@ go infinite
 					bitboard to = pop_lsb(tmp);
 					unsigned long int nkSq = square(to);
 					bitboard tf = to | Pieces[KING | plr];
-					Pieces[KING | plr] ^= tf;
-					All_Pieces(plr) ^= tf;
+
+					auto toggleGroupMove = [this, tf](){
+						Pieces[KING | plr] ^= tf;
+						All_Pieces(plr)    ^= tf;
+					};
+					toggleGroupMove();
 					if (validPosition<plr>(nkSq)){
 						Zobrist toggle = zobrist::keys[KING | plr][kingSq];
 						toggle ^= zobrist::keys[KING | plr][nkSq];
-						zobr ^= toggle;
-						internal_move smove(tf);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						if( score >= beta ) {
-							Pieces[KING | plr] ^= tf;
-							All_Pieces(plr) ^= tf;
+						
+						auto toggleMove = [this, toggle](){
+							zobr ^= toggle;
+						};
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						internal_move smove(tf);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1267,43 +1331,44 @@ go infinite
 							bmove = smove;
 						}
 					}
-					Pieces[KING | plr] ^= tf;
-					All_Pieces(plr) ^= tf;
+					toggleGroupMove();
 				}
 			}
 		} else {
-			bitboard oldcastling = castling;
-			key ct = zobrist::castling[(castling*castlingsmagic)>>59];
-			key ct2;
-			unsigned long int i;
+			assert_state();
+			key ct = zobrist::castling[(castling*castlingsmagic)>>60];
 			for (int captured = QUEEN | (!plr); captured >= 0 ; captured -= 2){
+				unsigned int i = 0;
 				pieceScore -= Value::piece[captured];
-				for (i = 0; i < firstRook ; ++i) {
+				for (; i < firstRook ; ++i) {
 					bitboard tmp = Pieces[captured] & dt[i].attack;
 					unsigned int fromSq = dt[i].fromSq;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
+						unsigned int mpiece = dt[i].piecet;
 						Zobrist toggle = zobrist::keys[captured][toSq];
-						toggle ^= zobrist::keys[dt[i].piecet][toSq];
-						toggle ^= zobrist::keys[dt[i].piecet][fromSq];
-						Pieces[captured] ^= to;
-						Pieces[dt[i].piecet] ^= tf;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= to;
-						zobr ^= toggle;
+						toggle        ^= zobrist::keys[mpiece][toSq];
+						toggle        ^= zobrist::keys[mpiece][fromSq];
+
+						auto toggleMove = [this, toggle, captured, to, tf, mpiece](){
+							Pieces[captured] ^= to;
+							Pieces[mpiece]   ^= tf;
+							All_Pieces(plr)  ^= tf;
+							All_Pieces(!plr) ^= to;
+							zobr             ^= toggle;
+						};
+
 						internal_move smove(tf);
+						toggleMove();
 						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[captured] ^= to;
-						Pieces[dt[i].piecet] ^= tf;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= to;
+						toggleMove();
+
 						if( score >= beta ) {
 							pieceScore += Value::piece[captured];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1313,12 +1378,18 @@ go infinite
 						}
 					}
 				}
-				zobr ^= ct;
 				for ( ; i < firstQueen ; ++i){
 					unsigned int fromSq = dt[i].fromSq;
-					castling &= ~(UINT64_C(1) << fromSq);
-					ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
-					zobr ^= ct2;
+					bitboard toggleCastling = castling & (bitboard(1)<<fromSq);
+					key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
+					
+					auto toggleGroupMove = [this, toggleCastling, ct2](){
+						castling ^= toggleCastling;
+						zobr     ^= ct2;
+					};
+
+					toggleGroupMove();
+
 					bitboard tmp = Pieces[captured] & dt[i].attack;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
@@ -1327,25 +1398,25 @@ go infinite
 						Zobrist toggle = zobrist::keys[captured][toSq];
 						toggle ^= zobrist::keys[ROOK | plr][toSq];
 						toggle ^= zobrist::keys[ROOK | plr][fromSq];
-						Pieces[captured] ^= to;
-						Pieces[ROOK | plr] ^= tf;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= to;
-						zobr ^= toggle;
-						internal_move smove(tf);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[captured] ^= to;
-						Pieces[ROOK | plr] ^= tf;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= to;
-						if( score >= beta ) {
-							zobr ^= ct2;
-							zobr ^= ct;
-							castling = oldcastling;
-							pieceScore += Value::piece[captured];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						auto toggleMove = [this, toggle, captured, to, tf](){
+							Pieces[captured]   ^= to;
+							Pieces[ROOK | plr] ^= tf;
+							All_Pieces( plr)   ^= tf;
+							All_Pieces(!plr)   ^= to;
+							zobr ^= toggle;
+						};
+
+						internal_move smove(tf);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							pieceScore += Value::piece[captured];
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1354,10 +1425,13 @@ go infinite
 							bmove = smove;
 						}
 					}
-					zobr ^= ct2;
-					castling = oldcastling;
+					toggleGroupMove();
 				}
-				zobr ^= ct;
+#ifndef NDEBUG
+							pieceScore += Value::piece[captured];
+				assert_state();
+							pieceScore -= Value::piece[captured];
+#endif
 				for (; i < n ; ++i) {
 					unsigned int fromSq = dt[i].fromSq;
 					bitboard tmp = Pieces[captured] & dt[i].attack;
@@ -1368,22 +1442,24 @@ go infinite
 						Zobrist toggle = zobrist::keys[captured][toSq];
 						toggle ^= zobrist::keys[QUEEN | plr][toSq];
 						toggle ^= zobrist::keys[QUEEN | plr][fromSq];
-						Pieces[captured] ^= to;
-						Pieces[QUEEN | plr] ^= tf;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= to;
-						zobr ^= toggle;
+
+						auto toggleMove = [this, toggle, captured, to, tf](){
+							Pieces[captured] ^= to;
+							Pieces[QUEEN | plr] ^= tf;
+							All_Pieces(plr) ^= tf;
+							All_Pieces(!plr) ^= to;
+							zobr ^= toggle;
+						};
+
 						internal_move smove(tf);
+						toggleMove();
 						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[captured] ^= to;
-						Pieces[QUEEN | plr] ^= tf;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= to;
+						toggleMove();
+
 						if( score >= beta ) {
 							pieceScore += Value::piece[captured];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1393,38 +1469,48 @@ go infinite
 						}
 					}
 				}
-				castling &= castlingc<plr>::deactrights;
-				ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
-				zobr ^= ct;
-				zobr ^= ct2;
+#ifndef NDEBUG
+							pieceScore += Value::piece[captured];
+				assert_state();
+							pieceScore -= Value::piece[captured];
+#endif
+				bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
+				key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 				bitboard tmp = Pieces[captured] & KAttack;
 				while (tmp){
 					bitboard to = pop_lsb(tmp);
 					unsigned long int nkSq = square(to);
 					bitboard tf = to | Pieces[KING | plr];
-					Pieces[captured] ^= to;
-					Pieces[KING | plr] ^= tf;
-					All_Pieces(plr) ^= tf;
-					All_Pieces(!plr) ^= to;
+
+					auto toggleGroupMove = [this, to, tf, captured, ct2, toggleCastling](){
+						Pieces[captured]   ^= to;
+						Pieces[KING | plr] ^= tf;
+						All_Pieces( plr)   ^= tf;
+						All_Pieces(!plr)   ^= to;
+						zobr               ^= ct2;
+						castling           ^= toggleCastling;
+					};
+
+					toggleGroupMove();
 					if (validPosition<plr>(nkSq)){
 						Zobrist toggle = zobrist::keys[captured][nkSq];
 						toggle ^= zobrist::keys[KING | plr][nkSq];
 						toggle ^= zobrist::keys[KING | plr][kingSq];
-						zobr ^= toggle;
-						internal_move smove(tf);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						if( score >= beta ) {
-							Pieces[captured] ^= to;
-							Pieces[KING | plr] ^= tf;
-							All_Pieces(plr) ^= tf;
-							All_Pieces(!plr) ^= to;
-							castling = oldcastling;
-							zobr ^= ct;
-							zobr ^= ct2;
-							pieceScore += Value::piece[captured];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						auto toggleMove = [this, toggle](){
+							zobr ^= toggle;
+						};
+
+						internal_move smove(tf);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							pieceScore += Value::piece[captured];
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1433,41 +1519,42 @@ go infinite
 							bmove = smove;
 						}
 					}
-					Pieces[captured] ^= to;
-					Pieces[KING | plr] ^= tf;
-					All_Pieces(plr) ^= tf;
-					All_Pieces(!plr) ^= to;
+					toggleGroupMove();
 				}
-				castling = oldcastling;
-				zobr ^= ct;
-				zobr ^= ct2;
 				pieceScore += Value::piece[captured];
 			}
 			if (mode < quiescenceMask){
 				halfmoves = oldhm + 1;
 				if ((castling & (castlingc<plr>::KingSide) & Pieces[ROOK | plr]) && (castlingc<plr>::KingSideSpace & occ)==0 && notAttacked<!plr>(castlingc<plr>::KSCPassing, castlingc<plr>::KSCPassingSq) && validPosition<plr>(kingSq)){
-					Pieces[KING | plr] ^= castlingc<plr>::KSCKT;
-					All_Pieces(plr) ^= castlingc<plr>::KSCFT;
+					auto toggleGroupMove = [this](){
+						Pieces[KING | plr] ^= castlingc<plr>::KSCKT;
+						All_Pieces(plr)    ^= castlingc<plr>::KSCFT;
+					};
+					toggleGroupMove();
 					if (validPosition<plr>(castlingc<plr>::kingSqAfterKSC)){
-						castling &= castlingc<plr>::deactrights;
+						bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
 						Zobrist toggle = zobrist::keys[ROOK | plr][0+((plr==black)?56:0)];
 						toggle ^= zobrist::keys[ROOK | plr][2+((plr==black)?56:0)];
 						toggle ^= zobrist::keys[KING | plr][3+((plr==black)?56:0)];
 						toggle ^= zobrist::keys[KING | plr][1+((plr==black)?56:0)];
 						toggle ^= ct;
-						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
-						Pieces[ROOK | plr] ^= castlingc<plr>::KSCRT;
-						zobr ^= toggle;
-						internal_move smove(castlingc<plr>::KSCKT);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[ROOK | plr] ^= castlingc<plr>::KSCRT;
-						castling = oldcastling;
-						if( score >= beta ) {
-							Pieces[KING | plr] ^= castlingc<plr>::KSCKT;
-							All_Pieces(plr) ^= castlingc<plr>::KSCFT;
+						toggle ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(castlingc<plr>::KSCKT, 0), beta);
+						auto toggleMove = [this, toggle, toggleCastling](){
+							Pieces[ROOK | plr] ^= castlingc<plr>::KSCRT;
+							zobr               ^= toggle;
+							castling           ^= toggleCastling;
+						};
+
+						internal_move smove(castlingc<plr>::KSCKT);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(castlingc<plr>::KSCKT, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1476,33 +1563,38 @@ go infinite
 							bmove = smove;
 						}
 					}
-					kingSq = castlingc<plr>::kingSqBefore;
-					Pieces[KING | plr] ^= castlingc<plr>::KSCKT;
-					All_Pieces(plr) ^= castlingc<plr>::KSCFT;
+					toggleGroupMove();
 				}
 				if ((castling & (castlingc<plr>::QueenSide) & Pieces[ROOK | plr])!=0 && (castlingc<plr>::QueenSideSpace & occ)==0 && notAttacked<!plr>(castlingc<plr>::QSCPassing, castlingc<plr>::QSCPassingSq) && validPosition<plr>(kingSq)){
-					Pieces[KING | plr] ^= castlingc<plr>::QSCKT;
-					All_Pieces(plr) ^= castlingc<plr>::QSCFT;
+					auto toggleGroupMove = [this](){
+						Pieces[KING | plr] ^= castlingc<plr>::QSCKT;
+						All_Pieces(plr)    ^= castlingc<plr>::QSCFT;
+					};
+					toggleGroupMove();
 					if (validPosition<plr>(castlingc<plr>::kingSqAfterQSC)){
-						castling &= castlingc<plr>::deactrights;
+						bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
 						Zobrist toggle = zobrist::keys[ROOK | plr][7+((plr==black)?56:0)];
 						toggle ^= zobrist::keys[ROOK | plr][4+((plr==black)?56:0)];
 						toggle ^= zobrist::keys[KING | plr][3+((plr==black)?56:0)];
 						toggle ^= zobrist::keys[KING | plr][5+((plr==black)?56:0)];
 						toggle ^= ct;
-						toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
-						Pieces[ROOK | plr] ^= castlingc<plr>::QSCRT;
-						zobr ^= toggle;
-						internal_move smove(castlingc<plr>::QSCKT);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[ROOK | plr] ^= castlingc<plr>::QSCRT;
-						castling = oldcastling;
-						if( score >= beta ) {
-							Pieces[KING | plr] ^= castlingc<plr>::QSCKT;
-							All_Pieces(plr) ^= castlingc<plr>::QSCFT;
+						toggle ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(castlingc<plr>::QSCKT, 0), beta);
+						auto toggleMove = [this, toggle, toggleCastling](){
+							Pieces[ROOK | plr] ^= castlingc<plr>::QSCRT;
+							zobr               ^= toggle;
+							castling           ^= toggleCastling;
+						};
+
+						internal_move smove(castlingc<plr>::QSCKT);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(castlingc<plr>::QSCKT, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1511,29 +1603,34 @@ go infinite
 							bmove = smove;
 						}
 					}
-					Pieces[KING | plr] ^= castlingc<plr>::QSCKT;
-					All_Pieces(plr) ^= castlingc<plr>::QSCFT;
+					toggleGroupMove();
 				}
 
-				for (i = 0; i < firstRook ; ++i) {
+				unsigned int i = 0;
+				for (; i < firstRook ; ++i) {
 					unsigned int fromSq = dt[i].fromSq;
 					bitboard tmp = dt[i].attack & empty;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[dt[i].piecet][toSq];
-						toggle ^= zobrist::keys[dt[i].piecet][fromSq];
-						All_Pieces(plr) ^= tf;
-						Pieces[dt[i].piecet] ^= tf;
-						zobr ^= toggle;
+						unsigned int mpiece = dt[i].piecet;
+						Zobrist toggle = zobrist::keys[mpiece][toSq];
+						toggle ^= zobrist::keys[mpiece][fromSq];
+
+						auto toggleMove = [this, toggle, tf, mpiece](){
+							All_Pieces(plr) ^= tf;
+							Pieces[mpiece]  ^= tf;
+							zobr            ^= toggle;
+						};
+						
 						internal_move smove(tf);
+						toggleMove();
 						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[dt[i].piecet] ^= tf;
-						All_Pieces(plr) ^= tf;
+						toggleMove();
+
 						if( score >= beta ) {
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1543,33 +1640,39 @@ go infinite
 						}
 					}
 				}
-				zobr ^= ct;
 				for (; i < firstQueen ; ++i) {
 					unsigned int fromSq = dt[i].fromSq;
-					castling &= ~(UINT64_C(1) << fromSq);
-					ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
-					zobr ^= ct2;
+					bitboard toggleCastling = castling & (UINT64_C(1)<<fromSq);
+					key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
+					
+					auto toggleGroupMove = [this, toggleCastling, ct2](){
+						zobr     ^= ct2;
+						castling ^= toggleCastling;
+					};
+					toggleGroupMove();
 					bitboard tmp = dt[i].attack & empty;
 					while (tmp){
 						bitboard to = pop_lsb(tmp);
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[ROOK | plr][toSq];
-						toggle ^= zobrist::keys[ROOK | plr][fromSq];
-						All_Pieces(plr) ^= tf;
-						Pieces[ROOK | plr] ^= tf;
-						zobr ^= toggle;
-						internal_move smove(tf);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[ROOK | plr] ^= tf;
-						All_Pieces(plr) ^= tf;
-						if( score >= beta ) {
-							zobr ^= ct2;
-							zobr ^= ct;
-							castling = oldcastling;
+						toggle        ^= zobrist::keys[ROOK | plr][fromSq];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						auto toggleMove = [this, toggle, tf](){
+							All_Pieces(plr)    ^= tf;
+							Pieces[ROOK | plr] ^= tf;
+							zobr               ^= toggle;
+						};
+
+						internal_move smove(tf);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1578,10 +1681,8 @@ go infinite
 							bmove = smove;
 						}
 					}
-					zobr ^= ct2;
-					castling = oldcastling;
+					toggleGroupMove();
 				}
-				zobr ^= ct;
 				for (; i < n ; ++i) {
 					unsigned int fromSq = dt[i].fromSq;
 					bitboard tmp = dt[i].attack & empty;
@@ -1591,16 +1692,20 @@ go infinite
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[QUEEN | plr][toSq];
 						toggle ^= zobrist::keys[QUEEN | plr][fromSq];
-						All_Pieces(plr) ^= tf;
-						Pieces[QUEEN | plr] ^= tf;
-						zobr ^= toggle;
+
+						auto toggleMove = [this, toggle, tf](){
+							All_Pieces(plr)     ^= tf;
+							Pieces[QUEEN | plr] ^= tf;
+							zobr                ^= toggle;
+						};
+
 						internal_move smove(tf);
+						toggleMove();
 						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[QUEEN | plr] ^= tf;
-						All_Pieces(plr) ^= tf;
+						toggleMove();
+
 						if( score >= beta ) {
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1610,33 +1715,39 @@ go infinite
 						}
 					}
 				}
-				castling &= castlingc<plr>::deactrights;
-				ct2 = zobrist::castling[(castling*castlingsmagic)>>59];
-				zobr ^= ct;
-				zobr ^= ct2;
+				bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
+				key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
+				
 				bitboard tmp = KAttack & empty;
 				while (tmp){
 					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | Pieces[KING | plr];
 					unsigned long int nkSq = square(to);
-					Pieces[KING | plr] ^= tf;
-					All_Pieces(plr) ^= tf;
+
+					auto toggleGroupMove = [this, tf, toggleCastling, ct2](){
+						Pieces[KING | plr] ^= tf;
+						All_Pieces(plr)    ^= tf;
+						zobr               ^= ct2;
+						castling           ^= toggleCastling;
+					};
+					toggleGroupMove();
 					if (validPosition<plr>(nkSq)){
 						Zobrist toggle = zobrist::keys[KING | plr][nkSq];
-						toggle ^= zobrist::keys[KING | plr][kingSq];
-						zobr ^= toggle;
+						toggle        ^= zobrist::keys[KING | plr][kingSq];
+
+						auto toggleMove = [this, toggle](){
+							zobr ^= toggle;
+						};
+
 						internal_move smove(tf);
+						toggleMove();
 						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
+						toggleMove();
+
 						if( score >= beta ) {
-							Pieces[KING | plr] ^= tf;
-							All_Pieces(plr) ^= tf;
+							toggleGroupMove();
 
-							castling = oldcastling;
-							zobr ^= ct;
-							zobr ^= ct2;
-
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -1645,12 +1756,8 @@ go infinite
 							bmove = smove;
 						}
 					}
-					Pieces[KING | plr] ^= tf;
-					All_Pieces(plr) ^= tf;
+					toggleGroupMove();
 				}
-				castling = oldcastling;
-				zobr ^= ct;
-				zobr ^= ct2;
 			}
 		}
 		if (mode < quiescenceMask){
@@ -1675,16 +1782,20 @@ go infinite
 				unsigned long int toSq = square(to);
 				Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
 				toggle ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
-				All_Pieces(plr) ^= tf;
-				Pieces[PAWN | plr] ^= tf;
-				zobr ^= toggle;
+
+				auto toggleMove = [this, toggle, tf](){
+					All_Pieces(plr)    ^= tf;
+					Pieces[PAWN | plr] ^= tf;
+					zobr               ^= toggle;
+				};
+
 				internal_move smove(tf, PAWN | plr);
+				toggleMove();
 				searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-				zobr ^= toggle;
-				Pieces[PAWN | plr] ^= tf;
-				All_Pieces(plr) ^= tf;
+				toggleMove();
+
 				if( score >= beta ) {
-					prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
+					prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
 					return beta;			// fail-hard beta-cutoff
 				}
 				pvFound = true;
@@ -1713,16 +1824,20 @@ go infinite
 				Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
 				toggle ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-16:16)];
 				toggle ^= zobrist::enPassant[7&tmpSq];
-				All_Pieces(plr) ^= tf;
-				Pieces[PAWN | plr] ^= tf;
-				zobr ^= toggle;
+
+				auto toggleMove = [this, toggle, tf](){
+					All_Pieces(plr)    ^= tf;
+					Pieces[PAWN | plr] ^= tf;
+					zobr               ^= toggle;
+				};
+
 				internal_move smove(tf, PAWN | plr);
+				toggleMove();
 				searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-				zobr ^= toggle;
-				Pieces[PAWN | plr] ^= tf;
-				All_Pieces(plr) ^= tf;
+				toggleMove();
+
 				if( score >= beta ) {
-					prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
+					prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
 					return beta;			// fail-hard beta-cutoff
 				}
 				pvFound = true;
@@ -1734,42 +1849,60 @@ go infinite
 			enPassant = bitboard(0);
 		}
 	} else {
+
+		assert_state();
 		//bitboard tmp = occ;
 		//unsigned long int fromSq;
-		if (( checkedBy & (checkedBy - 1) ) == bitboard(0)){
+		if (!( checkedBy & (checkedBy - 1) )){
 			//1) Capturing the attacking piece
 			unsigned long int toSq = square(checkedBy);
 			int attacker = QUEEN | (!plr);
 			while (!(Pieces[attacker] & checkedBy)) attacker -= 2;
-			zobr ^= zobrist::keys[attacker][toSq];
-			Pieces[attacker] ^= checkedBy;
-			All_Pieces(!plr) ^= checkedBy;
+
+			auto togglePartialMove = [this, attacker, toSq, checkedBy](){
+				zobr             ^= zobrist::keys[attacker][toSq];
+				Pieces[attacker] ^= checkedBy;
+				All_Pieces(!plr) ^= checkedBy;
+			};
+			togglePartialMove();
+
 			pieceScore -= Value::piece[attacker];
 			if ((checkedBy & (plr==white?lastRank_w:lastRank_b)) == 0){
 				for (int diff = (plr==white?7:-9), f = 7 ; f >= 0 ; diff += 2, f -= 7){
 					bitboard att = (plr == white) ? (checkedBy >> diff) : (checkedBy << -diff);
 					att &= notFilled::file[f] & Pieces[PAWN | plr];
 					if (att){
-						bitboard tf = checkedBy | (att & -att); //FIXME lsb not needed, one bit guaranteed?
-						All_Pieces(plr) ^= tf;
+						assert(!(att & (att-1)));
+						bitboard tf = checkedBy | att;
+
+						auto togglePartial2Move = [this, tf](){
+							All_Pieces(plr) ^= tf;
+						};
+						togglePartial2Move();
 						if (validPositionNonChecked<plr>(kingSq)){
 							Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
 							toggle ^= zobrist::keys[PAWN | plr][toSq - diff];
-							Pieces[PAWN | plr] ^= tf;
-							zobr ^= toggle;
+
+							auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
+								togglePartialMove();
+								togglePartial2Move();
+							};
+
+							auto toggleMove = [this, toggle, tf](){
+								Pieces[PAWN | plr] ^= tf;
+								zobr               ^= toggle;
+							};
+
 							internal_move smove(tf, PAWN | plr);
+							toggleMove();
 							searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-							zobr ^= toggle;
-							Pieces[PAWN | plr] ^= tf;
+							toggleMove();
+
 							if( score >= beta ) {
-								zobr ^= zobrist::keys[attacker][toSq];
-								Pieces[attacker] ^= checkedBy;
-								All_Pieces(!plr) ^= checkedBy;
 								pieceScore += Value::piece[attacker];
+								toggleGroupMove();
 
-								All_Pieces(plr) ^= tf;
-
-								prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
+								prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
 								return beta;			// fail-hard beta-cutoff
 							}
 							pvFound = true;
@@ -1778,7 +1911,7 @@ go infinite
 								bmove = smove;
 							}
 						}
-						All_Pieces(plr) ^= tf;
+						togglePartial2Move();
 					}
 				}
 				if (((plr==white)?(checkedBy<<8):(checkedBy>>8)) == tmpEnPassant){
@@ -1786,27 +1919,38 @@ go infinite
 						bitboard att = (plr == white) ? (tmpEnPassant >> diff) : (tmpEnPassant << -diff);
 						att &=  notFilled::file[f] & Pieces[PAWN | plr];
 						if (att){
-							bitboard tf = tmpEnPassant | (att & -att); //FIXME same as above
-							All_Pieces(plr) ^= tf;
+							assert(!(att & (att-1)));
+							bitboard tf = tmpEnPassant | att;
+							
+							auto togglePartial2Move = [this, tf](){
+								All_Pieces(plr) ^= tf;
+							};
+							togglePartial2Move();
 							if (validPositionNonChecked<plr>(kingSq)){
 								unsigned long int toenpsq = square(tmpEnPassant);
 								Zobrist toggle = zobrist::keys[PAWN | plr][toenpsq];
 								toggle ^= zobrist::keys[PAWN | plr][toenpsq - diff];
-								Pieces[PAWN | plr] ^= tf;
-								zobr ^= toggle;
+
+								auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
+									togglePartialMove();
+									togglePartial2Move();
+								};
+
+								auto toggleMove = [this, toggle, tf](){
+									Pieces[PAWN | plr] ^= tf;
+									zobr               ^= toggle;
+								};
+
 								internal_move smove(tf, PAWN | plr | TTMove_EnPassantPromFlag);
+								toggleMove();
 								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-								zobr ^= toggle;
-								Pieces[PAWN | plr] ^= tf;
+								toggleMove();
+
 								if( score >= beta ) {
-									zobr ^= zobrist::keys[attacker][toSq];
-									Pieces[attacker] ^= checkedBy;
-									All_Pieces(!plr) ^= checkedBy;
 									pieceScore += Value::piece[attacker];
+									toggleGroupMove();
 
-									All_Pieces(plr) ^= tf;
-
-									prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
+									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
 									return beta;			// fail-hard beta-cutoff
 								}
 								pvFound = true;
@@ -1815,7 +1959,7 @@ go infinite
 									bmove = smove;
 								}
 							}
-							All_Pieces(plr) ^= tf;
+							togglePartial2Move();
 						}
 					}
 				}
@@ -1824,34 +1968,47 @@ go infinite
 					bitboard att = (plr == white) ? (checkedBy >> diff) : (checkedBy << -diff);
 					att &=  notFilled::file[f] & Pieces[PAWN | plr];
 					if (att){
-						bitboard from = att & -att; //FIXME also?
+						assert(!(att & (att-1)));
+						bitboard from = att;
 						bitboard tf = checkedBy | from;
-						All_Pieces(plr) ^= tf;
+
+						auto togglePartial2Move = [this, tf](){
+							All_Pieces(plr) ^= tf;
+						};
+						togglePartial2Move();
 						if (validPositionNonChecked<plr>(kingSq)){
-							Pieces[PAWN | plr] ^= from;
+							auto togglePartial3Move = [this, from, toSq, diff](){
+								Pieces[PAWN | plr] ^= from;
+								zobr ^= zobrist::keys[PAWN | plr][toSq - diff];
+							};
+							auto toggleGroupMove = [togglePartialMove, togglePartial2Move, togglePartial3Move](){
+								togglePartialMove();
+								togglePartial2Move();
+								togglePartial3Move();
+							};
+
 							pieceScore -= Value::piece[PAWN | plr];
-							zobr ^= zobrist::keys[PAWN | plr][toSq - diff];
+							togglePartial3Move();
 							for (int prom = QUEEN | plr; prom > (PAWN | colormask) ; prom -= 2){
-								Pieces[prom] ^= checkedBy;
-								pieceScore += Value::piece[prom];
-								zobr ^= zobrist::keys[prom][toSq];
+								auto toggleMove = [this, toSq, prom, checkedBy](){
+									Pieces[prom] ^= checkedBy;
+									zobr         ^= zobrist::keys[prom][toSq];
+								};
+
 								internal_move smove(tf, prom);
+								pieceScore += Value::piece[prom];
+								toggleMove();
 								searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-								zobr ^= zobrist::keys[prom][toSq];
+								toggleMove();
 								pieceScore -= Value::piece[prom];
-								Pieces[prom] ^= checkedBy;
+
 								if( score >= beta ) {
-									zobr ^= zobrist::keys[PAWN | plr][toSq - diff];
-									zobr ^= zobrist::keys[attacker][toSq];
-									Pieces[attacker] ^= checkedBy;
-									All_Pieces(!plr) ^= checkedBy;
 									pieceScore += Value::piece[attacker];
-
 									pieceScore += Value::piece[PAWN | plr];
-									Pieces[PAWN | plr] ^= from;
-									All_Pieces(plr) ^= tf;
 
-									prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
+									toggleGroupMove();
+
+									prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
 									return beta;			// fail-hard beta-cutoff
 								}
 								pvFound = true;
@@ -1860,11 +2017,10 @@ go infinite
 									bmove = smove;
 								}
 							}
-							zobr ^= zobrist::keys[PAWN | plr][toSq - diff];
+							togglePartial3Move();
 							pieceScore += Value::piece[PAWN | plr];
-							Pieces[PAWN | plr] ^= from;
 						}
-						All_Pieces(plr) ^= tf;
+						togglePartial2Move();
 					}
 				}
 			}
@@ -1872,26 +2028,37 @@ go infinite
 			while (tmp){
 				bitboard from = pop_lsb(tmp);
 				bitboard tf = from | checkedBy;
-				All_Pieces(plr) ^= tf;
+
+				auto togglePartial2Move = [this, tf](){
+					All_Pieces(plr) ^= tf;
+				};
+				togglePartial2Move();
+
 				if (validPositionNonChecked<plr>(kingSq)){
 					unsigned long int fromSq = square(from);
 					Zobrist toggle = zobrist::keys[KNIGHT | plr][fromSq];
-					toggle ^= zobrist::keys[KNIGHT | plr][toSq];
-					Pieces[KNIGHT | plr] ^= tf;
-					zobr ^= toggle;
+					toggle        ^= zobrist::keys[KNIGHT | plr][toSq];
+
+					auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
+						togglePartialMove();
+						togglePartial2Move();
+					};
+
+					auto toggleMove = [this, toggle, tf](){
+						Pieces[KNIGHT | plr] ^= tf;
+						zobr                 ^= toggle;
+					};
+
 					internal_move smove(tf);
+					toggleMove();
 					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					zobr ^= toggle;
-					Pieces[KNIGHT | plr] ^= tf;
+					toggleMove();
+
 					if( score >= beta ) {
-						zobr ^= zobrist::keys[attacker][toSq];
-						Pieces[attacker] ^= checkedBy;
-						All_Pieces(!plr) ^= checkedBy;
 						pieceScore += Value::piece[attacker];
+						toggleGroupMove();
 
-						All_Pieces(plr) ^= tf;
-
-						prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 						return beta;			// fail-hard beta-cutoff
 					}
 					pvFound = true;
@@ -1900,32 +2067,41 @@ go infinite
 						bmove = smove;
 					}
 				}
-				All_Pieces(plr) ^= tf;
+				togglePartial2Move();
 			}
 			tmp = Pieces[BISHOP | plr] & bishopAttacks(occ, toSq);
 			while (tmp){
 				bitboard from = pop_lsb(tmp);
 				bitboard tf = from | checkedBy;
-				All_Pieces(plr) ^= tf;
+				auto togglePartial2Move = [this, tf](){
+					All_Pieces(plr) ^= tf;
+				};
+				togglePartial2Move();
 				if (validPositionNonChecked<plr>(kingSq)){
 					unsigned long int fromSq = square(from);
 					Zobrist toggle = zobrist::keys[BISHOP | plr][fromSq];
-					toggle ^= zobrist::keys[BISHOP | plr][toSq];
-					Pieces[BISHOP | plr] ^= tf;
-					zobr ^= toggle;
+					toggle        ^= zobrist::keys[BISHOP | plr][toSq];
+
+					auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
+						togglePartialMove();
+						togglePartial2Move();
+					};
+
+					auto toggleMove = [this, toggle, tf](){
+						Pieces[BISHOP | plr] ^= tf;
+						zobr                 ^= toggle;
+					};
+
 					internal_move smove(tf);
+					toggleMove();
 					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					zobr ^= toggle;
-					Pieces[BISHOP | plr] ^= tf;
+					toggleMove();
+
 					if( score >= beta ) {
-						zobr ^= zobrist::keys[attacker][toSq];
-						Pieces[attacker] ^= checkedBy;
-						All_Pieces(!plr) ^= checkedBy;
 						pieceScore += Value::piece[attacker];
+						toggleGroupMove();
 
-						All_Pieces(plr) ^= tf;
-
-						prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 						return beta;			// fail-hard beta-cutoff
 					}
 					pvFound = true;
@@ -1934,39 +2110,46 @@ go infinite
 						bmove = smove;
 					}
 				}
-				All_Pieces(plr) ^= tf;
+				togglePartial2Move();
 			}
 			tmp = Pieces[ROOK | plr] & rookAttacks(occ, toSq);
-			bitboard oldcastling = castling;
-			key ct = zobrist::castling[(castling*castlingsmagic)>>59];
-			zobr ^= ct;
+			key ct = zobrist::castling[(castling*castlingsmagic)>>60];
 			while (tmp){
 				bitboard from = pop_lsb(tmp);
 				bitboard tf = from | checkedBy;
-				All_Pieces(plr) ^= tf;
+				auto togglePartial2Move = [this, tf, ct](){
+					All_Pieces(plr) ^= tf;
+					zobr            ^= ct;
+				};
+				togglePartial2Move();
 				if (validPositionNonChecked<plr>(kingSq)){
-					castling &= ~from;
+					bitboard toggleCastling = castling & from;
 					unsigned long int fromSq = square(from);
 					Zobrist toggle = zobrist::keys[ROOK | plr][fromSq];
-					toggle ^= zobrist::keys[ROOK | plr][toSq];
-					toggle ^= zobrist::castling[(castling*castlingsmagic)>>59];
-					Pieces[ROOK | plr] ^= tf;
-					zobr ^= toggle;
+					toggle        ^= zobrist::keys[ROOK | plr][toSq];
+					toggle ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
+
+					auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
+						togglePartialMove();
+						togglePartial2Move();
+					};
+
+					auto toggleMove = [this, toggle, toggleCastling, tf](){
+						Pieces[ROOK | plr] ^= tf;
+						zobr               ^= toggle;
+						castling           ^= toggleCastling;
+					};
+
 					internal_move smove(tf);
+					toggleMove();
 					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					zobr ^= toggle;
-					Pieces[ROOK | plr] ^= tf;
-					castling = oldcastling;
+					toggleMove();
+
 					if( score >= beta ) {
-						zobr ^= zobrist::keys[attacker][toSq];
-						Pieces[attacker] ^= checkedBy;
-						All_Pieces(!plr) ^= checkedBy;
 						pieceScore += Value::piece[attacker];
+						toggleGroupMove();
 
-						All_Pieces(plr) ^= tf;
-						zobr ^= ct;
-
-						prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 						return beta;			// fail-hard beta-cutoff
 					}
 					pvFound = true;
@@ -1975,33 +2158,40 @@ go infinite
 						bmove = smove;
 					}
 				}
-				All_Pieces(plr) ^= tf;
+				togglePartial2Move();
 			}
-			zobr ^= ct;
 			tmp = Pieces[QUEEN | plr] & queenAttacks(occ, toSq);
 			while (tmp){
 				bitboard from = pop_lsb(tmp);
-				bitboard tf = from | checkedBy;
-				All_Pieces(plr) ^= tf;
+				bitboard tf   = from | checkedBy;
+				auto togglePartial2Move = [this, tf, ct](){
+					All_Pieces(plr) ^= tf;
+				};
+				togglePartial2Move();
 				if (validPositionNonChecked<plr>(kingSq)){
-					unsigned long int fromSq = square(from);
-					Zobrist toggle = zobrist::keys[QUEEN | plr][fromSq];
-					toggle ^= zobrist::keys[QUEEN | plr][toSq];
-					Pieces[QUEEN | plr] ^= tf;
-					zobr ^= toggle;
+					Zobrist toggle = zobrist::keys[QUEEN | plr][square(from)];
+					toggle        ^= zobrist::keys[QUEEN | plr][toSq];
+
+					auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
+						togglePartialMove();
+						togglePartial2Move();
+					};
+
+					auto toggleMove = [this, toggle, tf](){
+						Pieces[QUEEN | plr] ^= tf;
+						zobr                ^= toggle;
+					};
+
 					internal_move smove(tf);
+					toggleMove();
 					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					zobr ^= toggle;
-					Pieces[QUEEN | plr] ^= tf;
+					toggleMove();
+
 					if( score >= beta ) {
-						zobr ^= zobrist::keys[attacker][toSq];
-						Pieces[attacker] ^= checkedBy;
-						All_Pieces(!plr) ^= checkedBy;
 						pieceScore += Value::piece[attacker];
+						toggleGroupMove();
 
-						All_Pieces(plr) ^= tf;
-
-						prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 						return beta;			// fail-hard beta-cutoff
 					}
 					pvFound = true;
@@ -2010,12 +2200,10 @@ go infinite
 						bmove = smove;
 					}
 				}
-				All_Pieces(plr) ^= tf;
+				togglePartial2Move();
 			}
 			pieceScore += Value::piece[attacker];
-			zobr ^= zobrist::keys[attacker][toSq];
-			Pieces[attacker] ^= checkedBy;
-			All_Pieces(!plr) ^= checkedBy;
+			togglePartialMove();
 			//2) Block it if it is a ray piece
 			//ray is a subset of empty
 			unsigned long int tmpSq = square(Pieces[KING | plr]);
@@ -2071,34 +2259,34 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					}
 					if ((attacker & Pieces[PAWN | plr]) != 0){
 						bitboard tf = tmpEnPassant | attacker;
-						Pieces[PAWN | plr] ^= tf;
-						Pieces[PAWN | (!plr)] ^= cp;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= cp;
+
+						auto toggleGroupMove = [this, tf, cp](){
+							Pieces[PAWN | plr] ^= tf;
+							Pieces[PAWN | (!plr)] ^= cp;
+							All_Pieces(plr) ^= tf;
+							All_Pieces(!plr) ^= cp;
+						};
+						toggleGroupMove();
 						if (validPositionNonChecked<plr>(kingSq)){
 							Zobrist toggle = zobrist::keys[PAWN | plr][tmpSq2];
 							toggle ^= zobrist::keys[PAWN | plr][tmpSq2-diff];
 							toggle ^= zobrist::keys[PAWN | (!plr)][tmpSq2+(plr==white)?-8:8];
-							zobr ^= toggle;
-							pieceScore -= Value::piece[PAWN | (!plr)];
-							internal_move smove(tf, PAWN | plr | TTMove_EnPassantPromFlag);
-							searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-							pieceScore += Value::piece[PAWN | (!plr)];
-							zobr ^= toggle;
-							if( score >= beta ) {
-								Pieces[PAWN | plr] ^= tf;
-								Pieces[PAWN | (!plr)] ^= cp;
-								All_Pieces(plr) ^= tf;
-								All_Pieces(!plr) ^= cp;
+							
+							auto toggleMove = [this, toggle](){
+								zobr ^= toggle;
+							};
 
-								prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
-								halfmoves = oldhm;
-								zobr ^= zobrist::blackKey;
-								enPassant = tmpEnPassant;
-								if (enPassant) zobr ^= zobrist::enPassant[enSq];
-								if (plr==black) --fullmoves;
-								addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
-								statistics(++betaCutOff);
+							internal_move smove(tf, PAWN | plr | TTMove_EnPassantPromFlag);
+							pieceScore -= Value::piece[PAWN | (!plr)];
+							toggleMove();
+							searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+							toggleMove();
+							pieceScore += Value::piece[PAWN | (!plr)];
+
+							if( score >= beta ) {
+								toggleGroupMove();
+
+								prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr | TTMove_EnPassantPromFlag), beta);
 								return beta;			// fail-hard beta-cutoff
 							}
 							pvFound = true;
@@ -2107,15 +2295,12 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 								bmove = smove;
 							}
 						}
-						Pieces[PAWN | plr] ^= tf;
-						Pieces[PAWN | (!plr)] ^= cp;
-						All_Pieces(plr) ^= tf;
-						All_Pieces(!plr) ^= cp;
+						toggleGroupMove();
 					}
 				}
 			}
 #endif
-
+			assert_state();
 			bitboard tmpP;
 			bitboard tmp2 = Pieces[PAWN | plr];
 			tmp = ray;
@@ -2147,23 +2332,32 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					tf |= (tf << 16);
 					enPassant = to << 8;
 				}
-				All_Pieces(plr) ^= tf;
+				auto toggleGroupMove = [this, tf](){
+					All_Pieces(plr) ^= tf;
+				};
+				toggleGroupMove();
 				if (validPositionNonChecked<plr>(kingSq)) {
 					toSq  = square(to);
 					tmpSq = square(enPassant);
 					Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
 					toggle ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-16:16)];
 					toggle ^= zobrist::enPassant[7&tmpSq];
-					Pieces[PAWN | plr] ^= tf;
-					zobr ^= toggle;
-					internal_move smove(tf, PAWN | plr);
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					zobr ^= toggle;
-					Pieces[PAWN | plr] ^= tf;
-					if( score >= beta ) {
-						All_Pieces(plr) ^= tf;
 
-						prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
+					auto toggleMove = [this, toggle, tf](){
+						Pieces[PAWN | plr] ^= tf;
+						zobr               ^= toggle;
+					};
+
+					internal_move smove(tf, PAWN | plr);
+					toggleMove();
+					assert_state();
+					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+					toggleMove();
+
+					if( score >= beta ) {
+						toggleGroupMove();
+
+						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
 						return beta;			// fail-hard beta-cutoff
 					}
 					pvFound = true;
@@ -2172,40 +2366,49 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						bmove = smove;
 					}
 				}
-				All_Pieces(plr) ^= tf;
+				toggleGroupMove();
 			}
 			enPassant = 0;
+			assert_state();
 			while (tmpP){
 				bitboard to = pop_lsb(tmpP);
-				bitboard from = to;
-				if (plr == white){
-					from >>= 8;
-				} else {
-					from <<= 8;
-				}
+				bitboard from = (plr == white) ? (to >> 8) : (to << 8);
 				bitboard tf = to | from;
-				All_Pieces(plr) ^= tf;
+
+				auto togglePartialMove = [this, tf](){
+					All_Pieces(plr) ^= tf;
+				};
+				togglePartialMove();
 				if (validPositionNonChecked<plr>(kingSq)) {
 					toSq = square(to);
-					Pieces[PAWN | plr] ^= from;
+					auto togglePartial2Move = [this, from, toSq](){
+						Pieces[PAWN | plr] ^= from;
+						zobr ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
+					};
+					togglePartial2Move();
+					auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
+						togglePartialMove();
+						togglePartial2Move();
+					};
 					pieceScore -= Value::piece[PAWN | plr];
-					zobr ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
 					for (int prom = QUEEN | plr; prom > (PAWN | colormask) ; prom -= 2){
-						Pieces[prom] ^= to;
-						pieceScore += Value::piece[prom];
-						zobr ^= zobrist::keys[prom][toSq];
+						auto toggleMove = [this, prom, toSq, to](){
+							Pieces[prom] ^= to;
+							zobr         ^= zobrist::keys[prom][toSq];
+						};
+
 						internal_move smove(tf, prom);
+						pieceScore += Value::piece[prom];
+						toggleMove();
 						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= zobrist::keys[prom][toSq];
+						toggleMove();
 						pieceScore -= Value::piece[prom];
-						Pieces[prom] ^= to;
+
 						if( score >= beta ) {
 							pieceScore += Value::piece[PAWN | plr];
-							Pieces[PAWN | plr] ^= from;
-							zobr ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
-							All_Pieces(plr) ^= tf;
+							toggleGroupMove();
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, prom), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -2214,35 +2417,38 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							bmove = smove;
 						}
 					}
-					zobr ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
 					pieceScore += Value::piece[PAWN | plr];
-					Pieces[PAWN | plr] ^= from;
+					togglePartial2Move();
 				}
-				All_Pieces(plr) ^= tf;
+				togglePartialMove();
 			}
-			while (tmp ){
+			assert_state();
+			while (tmp){
 				bitboard to = pop_lsb(tmp);
-				bitboard tf = to;
-				if (plr == white){
-					tf |= (tf >> 8);
-				} else {
-					tf |= (tf << 8);
-				}
-				All_Pieces(plr) ^= tf;
+				bitboard tf = to | ((plr == white) ? (to >> 8) : (to << 8));
+				auto toggleGroupMove = [this, tf](){
+					All_Pieces(plr) ^= tf;
+				};
+				toggleGroupMove();
 				if (validPositionNonChecked<plr>(kingSq)) {
 					toSq = square(to);
 					Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
 					toggle ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
-					Pieces[PAWN | plr] ^= tf;
-					zobr ^= toggle;
-					internal_move smove(tf, PAWN | plr);
-					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					zobr ^= toggle;
-					Pieces[PAWN | plr] ^= tf;
-					if( score >= beta ) {
-						All_Pieces(plr) ^= tf;
 
-						prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
+					auto toggleMove = [this, toggle, tf](){
+						Pieces[PAWN | plr] ^= tf;
+						zobr               ^= toggle;
+					};
+
+					internal_move smove(tf, PAWN | plr);
+					toggleMove();
+					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+					toggleMove();
+
+					if( score >= beta ) {
+						toggleGroupMove();
+
+						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, PAWN | plr), beta);
 						return beta;			// fail-hard beta-cutoff
 					}
 					pvFound = true;
@@ -2251,8 +2457,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						bmove = smove;
 					}
 				}
-				All_Pieces(plr) ^= tf;
+				toggleGroupMove();
 			}
+			assert_state();
 			halfmoves = oldhm + 1;
 			tmpP = Pieces[KNIGHT | plr];
 			while (tmpP){
@@ -2262,21 +2469,29 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				while (tmp){
 					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | from;
-					All_Pieces(plr) ^= tf;
+					auto toggleGroupMove = [this, tf](){
+						All_Pieces(plr) ^= tf;
+					};
+					toggleGroupMove();
 					if (validPositionNonChecked<plr>(kingSq)){
 						toSq = square(to);
 						Zobrist toggle = zobrist::keys[KNIGHT | plr][toSq];
-						toggle ^= zobrist::keys[KNIGHT | plr][fromSq];
-						Pieces[KNIGHT | plr] ^= tf;
-						zobr ^= toggle;
-						internal_move smove(tf);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[KNIGHT | plr] ^= tf;
-						if( score >= beta ) {
-							All_Pieces(plr) ^= tf;
+						toggle        ^= zobrist::keys[KNIGHT | plr][fromSq];
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						auto toggleMove = [this, toggle, tf](){
+							Pieces[KNIGHT | plr] ^= tf;
+							zobr                 ^= toggle;
+						};
+
+						internal_move smove(tf);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -2285,9 +2500,10 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							bmove = smove;
 						}
 					}
-					All_Pieces(plr) ^= tf;
+					toggleGroupMove();
 				}
 			}
+			assert_state();
 			tmpP = Pieces[BISHOP | plr];
 			while (tmpP){
 				bitboard from = pop_lsb(tmpP);
@@ -2296,21 +2512,29 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				while (tmp){
 					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | from;
-					All_Pieces(plr) ^= tf;
+					auto toggleGroupMove = [this, tf](){
+						All_Pieces(plr) ^= tf;
+					};
+					toggleGroupMove();
 					if (validPositionNonChecked<plr>(kingSq)){
 						toSq = square(to);
 						Zobrist toggle = zobrist::keys[BISHOP | plr][toSq];
 						toggle ^= zobrist::keys[BISHOP | plr][fromSq];
-						Pieces[BISHOP | plr] ^= tf;
-						zobr ^= toggle;
-						internal_move smove(tf);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[BISHOP | plr] ^= tf;
-						if( score >= beta ) {
-							All_Pieces(plr) ^= tf;
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						auto toggleMove = [this, toggle, tf](){
+							Pieces[BISHOP | plr] ^= tf;
+							zobr                 ^= toggle;
+						};
+
+						internal_move smove(tf);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -2319,9 +2543,10 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							bmove = smove;
 						}
 					}
-					All_Pieces(plr) ^= tf;
+					toggleGroupMove();
 				}
 			}
+			assert_state();
 			tmpP = Pieces[ROOK | plr];
 			//Rooks in corners can not get into ray, so changing castling rights is useless
 			//as rooks will never be in a position where they have castling right.
@@ -2332,21 +2557,29 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				while (tmp){
 					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | from;
-					All_Pieces(plr) ^= tf;
+					auto toggleGroupMove = [this, tf](){
+						All_Pieces(plr) ^= tf;
+					};
+					toggleGroupMove();
 					if (validPositionNonChecked<plr>(kingSq)){
 						toSq = square(to);
 						Zobrist toggle = zobrist::keys[ROOK | plr][toSq];
 						toggle ^= zobrist::keys[ROOK | plr][fromSq];
-						Pieces[ROOK | plr] ^= tf;
-						zobr ^= toggle;
-						internal_move smove(tf);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[ROOK | plr] ^= tf;
-						if( score >= beta ) {
-							All_Pieces(plr) ^= tf;
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						auto toggleMove = [this, toggle, tf](){
+							Pieces[ROOK | plr] ^= tf;
+							zobr               ^= toggle;
+						};
+
+						internal_move smove(tf);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -2355,9 +2588,10 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							bmove = smove;
 						}
 					}
-					All_Pieces(plr) ^= tf;
+					toggleGroupMove();
 				}
 			}
+			assert_state();
 			tmpP = Pieces[QUEEN | plr];
 			while (tmpP){
 				bitboard from = pop_lsb(tmpP);
@@ -2366,21 +2600,29 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				while (tmp){
 					bitboard to = pop_lsb(tmp);
 					bitboard tf = to | from;
-					All_Pieces(plr) ^= tf;
+					auto toggleGroupMove = [this, tf](){
+						All_Pieces(plr) ^= tf;
+					};
+					toggleGroupMove();
 					if (validPositionNonChecked<plr>(kingSq)){
 						toSq = square(to);
 						Zobrist toggle = zobrist::keys[QUEEN | plr][toSq];
 						toggle ^= zobrist::keys[QUEEN | plr][fromSq];
-						Pieces[QUEEN | plr] ^= tf;
-						zobr ^= toggle;
-						internal_move smove(tf);
-						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-						zobr ^= toggle;
-						Pieces[QUEEN | plr] ^= tf;
-						if( score >= beta ) {
-							All_Pieces(plr) ^= tf;
 
-							prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						auto toggleMove = [this, toggle, tf](){
+							Pieces[QUEEN | plr] ^= tf;
+							zobr ^= toggle;
+						};
+
+						internal_move smove(tf);
+						toggleMove();
+						searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
+						toggleMove();
+
+						if( score >= beta ) {
+							toggleGroupMove();
+
+							prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 							return beta;			// fail-hard beta-cutoff
 						}
 						pvFound = true;
@@ -2389,51 +2631,56 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 							bmove = smove;
 						}
 					}
-					All_Pieces(plr) ^= tf;
+					toggleGroupMove();
 				}
 			}
+			assert_state();
 		}
+		assert_state();
 		//3) Move the king
 		halfmoves = 0;
 		bitboard from = Pieces[KING | plr];
 		unsigned long int fromSq = square(from);
 		bitboard mv = KingMoves[fromSq];
 		bitboard tmp1 = mv;
-		bitboard oldcastling = castling;
-		key ct = zobrist::castling[(castling*castlingsmagic)>>59];
-		castling &= castlingc<plr>::deactrights;
-		ct ^= zobrist::castling[(castling*castlingsmagic)>>59];
-		zobr ^= ct;
+		key ct = zobrist::castling[(castling*castlingsmagic)>>60];
+		bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
+		ct ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 		for (int attacker = QUEEN | (!plr); attacker >= 0 ; attacker -= 2){
 			bitboard tmp = Pieces[attacker] & tmp1;
 			while (tmp){
 				bitboard to = pop_lsb(tmp);
-				kingSq = square(to);
+				kingSq      = square(to);
 				bitboard tf = from | to;
-				Pieces[attacker] ^= to;
-				All_Pieces(!plr) ^= to;
-				Pieces[KING | plr] ^= tf;
-				All_Pieces(plr) ^= tf;
+				auto toggleGlobalMove = [this, tf, to, ct, attacker, toggleCastling](){
+					Pieces[attacker]   ^= to;
+					Pieces[KING | plr] ^= tf;
+					All_Pieces( plr)   ^= tf;
+					All_Pieces(!plr)   ^= to;
+					castling           ^= toggleCastling;
+					zobr               ^= ct;
+				};
+				toggleGlobalMove();
 				if (validPosition<plr>(kingSq)){
 					Zobrist toggle = zobrist::keys[KING | plr][fromSq];
 					toggle ^= zobrist::keys[KING | plr][kingSq];
 					toggle ^= zobrist::keys[attacker][kingSq];
-					pieceScore -= Value::piece[attacker];
-					zobr ^= toggle;
+
+					auto toggleMove = [this, toggle](){
+						zobr     ^= toggle;
+					};
+
 					internal_move smove(tf);
+					pieceScore -= Value::piece[attacker];
+					toggleMove();
 					searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-					zobr ^= toggle;
+					toggleMove();
 					pieceScore += Value::piece[attacker];
+
 					if( score >= beta ) {
-						Pieces[attacker] ^= to;
-						All_Pieces(!plr) ^= to;
-						Pieces[KING | plr] ^= tf;
-						All_Pieces(plr) ^= tf;
+						toggleGlobalMove();
 
-						castling = oldcastling;
-						zobr ^= ct;
-
-						prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+						prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 						return beta;			// fail-hard beta-cutoff
 					}
 					pvFound = true;
@@ -2442,10 +2689,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						bmove = smove;
 					}
 				}
-				Pieces[KING | plr] ^= tf;
-				All_Pieces(plr) ^= tf;
-				Pieces[attacker] ^= to;
-				All_Pieces(!plr) ^= to;
+				toggleGlobalMove();
 			}
 		}
 		halfmoves = oldhm + 1;
@@ -2454,24 +2698,31 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		while (tmp){
 			bitboard to = pop_lsb(tmp);
 			bitboard tf = to | from;
-			kingSq = square(to);
-			Pieces[KING | plr] ^= tf;
-			All_Pieces(plr) ^= tf;
+			kingSq      = square(to);
+			auto toggleGlobalMove = [this, tf, ct, toggleCastling](){
+				Pieces[KING | plr] ^= tf;
+				All_Pieces(plr)    ^= tf;
+				castling           ^= toggleCastling;
+				zobr               ^= ct;
+			};
+			toggleGlobalMove();
 			if (validPosition<plr>(kingSq)){
 				Zobrist toggle = zobrist::keys[KING | plr][kingSq];
-				toggle ^= zobrist::keys[KING | plr][fromSq];
-				zobr ^= toggle;
+				toggle        ^= zobrist::keys[KING | plr][fromSq];
+
+				auto toggleMove = [this, toggle](){
+					zobr ^= toggle;
+				};
+				
 				internal_move smove(tf);
+				toggleMove();
 				searchDeeper<mode, !plr>(alpha, beta, depth, pvFound, score);
-				zobr ^= toggle;
+				toggleMove();
+
 				if( score >= beta ) {
-					Pieces[KING | plr] ^= tf;
-					All_Pieces(plr) ^= tf;
+					toggleGlobalMove();
 
-					castling = oldcastling;
-					zobr ^= ct;
-
-					prepare_beta_cutoff<mode, plr>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
+					prepare_beta_cutoff<mode, plr, root>(oldhm, tmpEnPassant, enSq, depth, getMove<plr>(tf, 0), beta);
 					return beta;			// fail-hard beta-cutoff
 				}
 				pvFound = true;
@@ -2480,15 +2731,15 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					bmove = smove;
 				}
 			}
-			Pieces[KING | plr] ^= tf;
-			All_Pieces(plr) ^= tf;
+			toggleGlobalMove();
 		}
-		castling = oldcastling;
-		zobr ^= ct;
 	}
 	while (board_interface->collectNextScore(score, thread_id));
 	halfmoves = oldhm;
-	zobr ^= zobrist::blackKey;
+	if (!root) {
+		playing = !plr;
+		zobr   ^= zobrist::blackKey;
+	}
 	enPassant = tmpEnPassant;
 	if (enPassant) zobr ^= zobrist::enPassant[enSq];
 	if (plr==black) --fullmoves;
@@ -2875,18 +3126,37 @@ inline int Board::evaluatePawnStructure() __restrict{
 inline void Board::assert_state() const __restrict{
 #ifndef NDEBUG
 	bitboard all = 0;
+	int score = 0;
+	key z = 0;
 	for (unsigned int i = PAWN | white ; i <= (KING | white) ; i += 2) {
 		ASSUME(!(all & Pieces[i]));
 		all |= Pieces[i];
+		score += popCount(Pieces[i]) * Value::piece[i];
+		bitboard t = Pieces[i];
+		while(t){
+			int s = square(pop_lsb(t));
+			z ^= zobrist::keys[i][s];
+		}
 	}
 	ASSUME(White_Pieces == all);
 	all = 0;
 	for (unsigned int i = PAWN | black ; i <= (KING | black) ; i += 2) {
 		ASSUME(!(all & Pieces[i]));
 		all |= Pieces[i];
+		score += popCount(Pieces[i]) * Value::piece[i];
+		bitboard t = Pieces[i];
+		while(t){
+			int s = square(pop_lsb(t));
+			z ^= zobrist::keys[i][s];
+		}
 	}
+	if (playing == BLACK) z ^= zobrist::blackKey;
+	z ^= zobrist::castling[(castling*castlingsmagic)>>60];
+	if (enPassant) z ^= zobrist::enPassant[7 & square(enPassant)];
 	ASSUME(Black_Pieces == all);
 	ASSUME(!(Black_Pieces & White_Pieces));
+	ASSUME(score == this->pieceScore);
+	ASSUME(z == zobr);
 #endif
 }
 

@@ -168,19 +168,19 @@ Board::Board(char fenBoard[], char fenPlaying, char fenCastling[], int fenEnPX, 
 		switch (fenCastling[ind++]){
 		case 'K' :
 			castling |= castlingc<white>::KingSide;
-			zobr ^= zobrist::White_King_Castling;
+			zobr     ^= zobrist::White_King_Castling;
 			break;
 		case 'Q' :
 			castling |= castlingc<white>::QueenSide;
-			zobr ^= zobrist::White_Queen_Castling;
+			zobr     ^= zobrist::White_Queen_Castling;
 			break;
 		case 'k' :
 			castling |= castlingc<black>::KingSide;
-			zobr ^= zobrist::Black_King_Castling;
+			zobr     ^= zobrist::Black_King_Castling;
 			break;
 		case 'q' :
 			castling |= castlingc<black>::QueenSide;
-			zobr ^= zobrist::Black_Queen_Castling;
+			zobr     ^= zobrist::Black_Queen_Castling;
 			break;
 		}
 	}
@@ -324,9 +324,9 @@ void Board::make(chapeiro::move m){
 				updatePieces(from, i);
 				updatePieces(to, i);
 				if ((i&(~colormask))==ROOK && (filled::normal[from] & castling) != 0){
-						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
+						zobr ^= zobrist::castling[(castling*castlingsmagic)>>60];
 						castling ^= filled::normal[from];
-						zobr ^= zobrist::castling[(castling*castlingsmagic)>>59];
+						zobr ^= zobrist::castling[(castling*castlingsmagic)>>60];
 				}/** else if ((i^(~colormask)) == KING){
 					if (playing==white){
 						kingSq[white] = square(to);

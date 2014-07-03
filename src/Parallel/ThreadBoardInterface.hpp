@@ -50,7 +50,7 @@ private:
     int                     score;
     bitboard                tf;
     int                     prom;
-    State                   st;
+    std::atomic<State>      st;
     std::mutex              st_m; //lock only to get in Executing or Completed
     uint64_t                job_id;
 
@@ -67,7 +67,7 @@ private:
     std::thread*    thrd;
     unsigned int    thrd_id;
     Task            tasks[task_pop];
-    task_bitmask    used; //only thrd should have access
+    std::atomic<task_bitmask>    used; //only thrd should have access
     uint64_t        job_id;
     uint64_t        job_id_last;
 

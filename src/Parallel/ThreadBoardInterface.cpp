@@ -177,15 +177,15 @@ bool Task::isPending(){
 
 bool Task::executeAs(unsigned int thrd_id){
     // std::lock_guard<std::mutex> lk(st_m);
-    if (st != Pending) return false;
-    st = Executing;
+    State t = Pending;
+    if (!st.compare_exchange_strong(t, Executing)) return false;
+    // st = Executing;
     Board * b = board.exchange(NULL);
     assert(b);
     b->setThreadID(thrd_id);
     // std::cout << std::setw(2) << thrd_id << " got task @" << std::setw(4) << depth << "(" << std::hex << ((void *) b) << ")" << std::dec<< std::endl;
     switch (type){
         case IterativeDeepening: //no result, clean it...
-            b->setThreadID(thrd_id);
             b->go(depth, tc);
         case PVS:
             score = b->search(depth, alpha, beta);
@@ -233,6 +233,7 @@ bool thread_data::collectNextScore(int &score){
     score = tasks[t].score;
     tasks[t].st = Invalid;
     used ^= 1 << t;
+    assert(!(used & (1 << t)));
     return true;
 }
 
@@ -242,10 +243,13 @@ bool thread_data::lazy_execute(task_bitmask mask, int &score){
         unsigned int i = square(pop_lsb(mask));
         if (tasks[i].job_id == job_id){ 
             ++job_id;
+            assert((used & (1 << i)));
+            assert(tasks[i].st != Invalid);
             if(tasks[i].executeAs(thrd_id)){
                 score = tasks[i].score;
                 tasks[i].st = Invalid;
                 used ^= 1 << i;
+                assert(!(used & (1 << i)));
                 --job_id;
                 return true;
             }
