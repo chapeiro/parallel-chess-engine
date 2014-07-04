@@ -6,7 +6,6 @@
  */
 
 #include <iostream>
-#include "../Board.hpp"
 #include <string>
 #include <stdlib.h>
 #include <regex>
@@ -218,8 +217,6 @@ int uci(){
 		}
 	} while (input.find("quit")==string::npos);
 	//if (debugcc) signEndOfFile("CChapeiro Terminated");
-	board_interface->stop();
-	delete board_interface;
 	return 0;
 }
 

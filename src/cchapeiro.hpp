@@ -83,6 +83,27 @@ enum color{
 constexpr color operator!(color c){
     return static_cast<color>(c ^ 1);
 }
+
+//Pieces array & indexes definitions
+enum Piece {
+    PAWN        = 0,
+    KNIGHT      = 2,
+    BISHOP      = 4,
+    ROOK        = 6,
+    QUEEN       = 8,
+    KING        = 10,
+    CPIECES     = 14
+};
+
+constexpr unsigned int operator|(Piece p, color c){
+    return static_cast<unsigned int>(p) | static_cast<unsigned int>(c);
+}
+
+constexpr int PIECEMASK = 14;
+constexpr int LASTPIECE = 12;
+constexpr int PIECESMAX = LASTPIECE;
+constexpr int WRONG_PIECE = -10;
+
 int communaticate();
 
 #endif /* CCHAPEIRO_HPP_ */

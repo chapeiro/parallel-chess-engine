@@ -9,8 +9,8 @@
 
 #ifndef BOARD_HPP_
 #define BOARD_HPP_
-#include "Utilities.hpp"
 #include "cchapeiro.hpp"
+#include "Utilities.hpp"
 #include "zobristKeys.hpp"
 #include "MagicsAndPrecomputedData.hpp"
 #include "TimeManagement/TimeManager.hpp"
@@ -58,26 +58,6 @@ typedef chapeiro::zobrist Zobrist;
 
 const std::string PiecesName[] = {"Pawns", "Knights", "Bishops",
 							 "Rooks", "Queens", "Kings"};
-
-//Pieces array & indexes definitions
-enum Piece {
-	PAWN   		= 0,
-	KNIGHT      = 2,
-	BISHOP      = 4,
-	ROOK        = 6,
-	QUEEN       = 8,
-	KING        = 10,
-	CPIECES     = 14
-};
-
-constexpr unsigned int operator|(Piece p, color c){
-	return static_cast<unsigned int>(p) | static_cast<unsigned int>(c);
-}
-
-constexpr int PIECEMASK = 14;
-constexpr int LASTPIECE = 12;
-constexpr int PIECESMAX = LASTPIECE;
-constexpr int WRONG_PIECE = -10;
 
 // #define PIECEMASK (14)
 // #define LASTPIECE (12)
@@ -277,11 +257,6 @@ class Board { //cache_align
 			search_state(int alpha, int beta, int depth);
 		};
 
-		struct move_info{
-			std::function<void ()> toggle;
-			int                    scoreDelta;
-		};
-
 	public:
 		//Construction
 		static Board* createBoard(const char FEN[] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -357,15 +332,13 @@ class Board { //cache_align
 		template<color plr> bitboard getNPinnedPawns(bitboard occ, int kingSq) __restrict;
 		template<color plr> int getMove(bitboard tf, int prom) __restrict;
 
-		template<SearchMode mode, color plr, bool root> int search(int alpha, int beta, int depth) __restrict;
-		template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2>
-			bool deeper(const internal_move& child, int oldhm, bitboard old_enpassant, search_state &sst, UnaryPredicate toggleMove, UnaryPredicate2 toggleGroupMove, int scoreGD) __restrict;
-		template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2, bool has_score_delta = true>
-			bool deeper(const internal_move& child, int oldhm, bitboard old_enpassant, search_state &sst, UnaryPredicate toggleMove, int scoreD, UnaryPredicate2 toggleGroupMove, int scoreGD) __restrict;
-		template<SearchMode mode, color plr> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict;
-		template<color plr> int quieSearch(int alpha, int beta) __restrict;
-
 		template<SearchMode mode, color plr, bool root> void prepare_beta_cutoff(int oldhm, bitboard old_enpassant, const internal_move& move_entry, int depth, int beta) __restrict;
+
+		template<SearchMode mode, color plr> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict;
+		template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2>
+			inline __attribute__((always_inline)) bool deeper(const internal_move &child, int oldhm, bitboard old_enpassant, search_state &sst, const UnaryPredicate& toggleMove, int scoreD, const UnaryPredicate2& toggleGroupMove, int scoreGD) __restrict;
+		template<SearchMode mode, color plr, bool root> int search(int alpha, int beta, int depth) __restrict;
+		template<color plr> int quieSearch(int alpha, int beta) __restrict;
 
 		bool threefoldRepetition() __restrict;
 };
@@ -495,7 +468,6 @@ template<color plr> inline bool Board::validPosition(int kingSq) __restrict{
 
 template<SearchMode mode, color plr> inline void Board::searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict{
 	addToHistory(zobr);
-	assert_state();
 	if (mode >= quiescenceMask){
 		score = -search<mode, plr, false>(-beta, -alpha, depth - 1);
 	} else if (mode == PV){
@@ -518,35 +490,6 @@ template<SearchMode mode, color plr> inline void Board::searchDeeper(int alpha, 
 	removeLastHistoryEntry();
 }
 
-template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2>
-bool Board::deeper(const internal_move& child, int oldhm, bitboard old_enpassant, search_state &sst, UnaryPredicate toggleMove, UnaryPredicate2 toggleGroupMove, int scoreGD) __restrict{
-	return deeper<mode, plr, root, UnaryPredicate, UnaryPredicate2, false>(child, oldhm, old_enpassant, sst, toggleMove, 0, toggleGroupMove, scoreGD);
-}
-
-template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2, bool has_score_delta>
-bool Board::deeper(const internal_move& child, int oldhm, bitboard old_enpassant, search_state &sst, UnaryPredicate toggleMove, int scoreD, UnaryPredicate2 toggleGroupMove, int scoreGD) __restrict{
-	if (has_score_delta) pieceScore += scoreD;
-	toggleMove();
-	searchDeeper<mode, !plr>(sst.alpha, sst.beta, sst.depth, sst.pvFound, sst.score);
-	toggleMove();
-	if (has_score_delta) pieceScore -= scoreD;
-
-	if( sst.score >= sst.beta ) {
-		pieceScore += scoreGD;
-		toggleGroupMove();
-
-		prepare_beta_cutoff<mode, plr, root>(oldhm, old_enpassant, child, sst.depth, sst.beta);
-		sst.score = sst.beta;		// fail-hard beta-cutoff
-		return true;
-	}
-	sst.pvFound = true;
-	if( ( mode == PV || mode >= quiescenceMask ) && sst.score > sst.alpha ){
-		sst.alpha = sst.score;		//Better move found!
-		sst.bmove = child;
-	}
-	return false;
-};
-
 template<SearchMode mode, color plr, bool root>
 inline void Board::prepare_beta_cutoff(int oldhm, bitboard old_enpassant, const internal_move& move_entry, int depth, int beta) __restrict{
 	halfmoves = oldhm;
@@ -561,6 +504,41 @@ inline void Board::prepare_beta_cutoff(int oldhm, bitboard old_enpassant, const 
 	addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, depth, getMove<plr>(move_entry.tf, move_entry.prom), beta);
 	statistics(++betaCutOff);
 }
+
+template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2>
+inline __attribute__((always_inline)) bool Board::deeper(const internal_move &child, int oldhm, bitboard old_enpassant, search_state &sst, const UnaryPredicate& toggleMove, int scoreD, const UnaryPredicate2& toggleGroupMove, int scoreGD) __restrict{
+	pieceScore += scoreD;
+	toggleMove();
+	searchDeeper<mode, !plr>(sst.alpha, sst.beta, sst.depth, sst.pvFound, sst.score);
+	toggleMove();
+	pieceScore -= scoreD;
+
+	if( sst.score >= sst.beta ) {
+		pieceScore += scoreGD;
+		toggleGroupMove();
+
+		halfmoves = oldhm;
+		if (!root) {
+			playing = !plr;
+			zobr   ^= zobrist::blackKey;
+		}
+		enPassant = old_enpassant;
+		if (old_enpassant) zobr ^= zobrist::enPassant[7 & square(old_enpassant)];
+		if (plr == black) --fullmoves;
+
+		addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, sst.depth, getMove<plr>(child.tf, child.prom), sst.beta);
+		statistics(++betaCutOff);
+		// prepare_beta_cutoff<mode, plr, root>(oldhm, old_enpassant, child, sst.depth, sst.beta);
+		sst.score = sst.beta;		// fail-hard beta-cutoff
+		return true;
+	}
+	sst.pvFound = true;
+	if( ( mode == PV || mode >= quiescenceMask ) && sst.score > sst.alpha ){
+		sst.alpha = sst.score;		//Better move found!
+		sst.bmove = child;
+	}
+	return false;
+};
 
 /**
  *
@@ -612,36 +590,26 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		return alpha;
 	}
 #endif
-
-	assert_state();
 	//move state forward (halfmoves (oldhm), fullmoves (fullmoves+{0, 1}(plr)), enPassant (tmpEnPassant)
 	int oldhm (halfmoves);
-	unsigned long int enSq = square( enPassant ) & 7;
 
-	assert_state();
-	if (enPassant) zobr ^= zobrist::enPassant[enSq];
+	if (enPassant) zobr ^= zobrist::enPassant[7 & square(enPassant)];
 	bitboard tmpEnPassant (enPassant);
 	fullmoves += plr;							//if (plr==black) ++fullmoves;
 	enPassant = bitboard(0);
 	halfmoves = 0;
-	assert_state();
+
 	if (!root) {
 		playing = plr;
 		zobr   ^= zobrist::blackKey;
 	}
-
-	assert_state();
 
 	U64 stNodes (stats.nodes);
 	U64 stHorNodes (stats.horizonNodes);
 
 	search_state sst(alpha, beta, depth);
 
-	assert_state();
-	unsigned long int kingSq = square(Pieces[KING | plr]);
 #ifndef NDEBUG
-	bitboard oldP[(KING | black)+1];
-	for (int i = 0 ; i <= (KING | black) ; ++i) oldP[i] = Pieces[i];
 	bitboard all = 0;
 	for (int i = PAWN | plr ; i <= (KING | plr) ; i += 2) all |= Pieces[i];
 	ASSUME(All_Pieces(plr) == all);
@@ -656,18 +624,17 @@ go infinite
 	all = 0;
 	for (int i = PAWN | (!plr) ; i <= (KING | (!plr)) ; i += 2) all |= Pieces[i];
 	ASSUME(All_Pieces(!plr) == all);
-	bitboard oldAll = All_Pieces(plr);
 #endif
 	const bitboard occ = All_Pieces(white) | All_Pieces(black);
 #ifndef NO_TRANSPOSITION_TABLE
 #ifndef NO_KILLER_MOVE
 	if (mode != Perft){
 		if (killerMove != NULL_MOVE){
-			int killerFromSq = getTTMove_From(killerMove);
-			int killerToSq = getTTMove_To(killerMove);
+			int killerFromSq    = getTTMove_From(killerMove);
+			int killerToSq      = getTTMove_To(killerMove);
 			bitboard killerFrom = bitboard(1) << killerFromSq;
-			bitboard killerTo = bitboard(1) << killerToSq;
-			bool killerMoveOk = true;
+			bitboard killerTo   = bitboard(1) << killerToSq;
+
 			if (((killerTo & All_Pieces(plr)) == bitboard(0)) && (All_Pieces(plr) & killerFrom)){
 				if ((Pieces[PAWN | plr] & killerFrom) == bitboard(0)){
 					int killerPiece = KNIGHT | plr;
@@ -696,11 +663,10 @@ go infinite
 								
 								internal_move smove(castlingc<plr>::KSCKT);
 
-								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
+								if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 
 							} else {
 								statistics(++ttError_Type1_SameHashKey);
-								killerMoveOk = false;
 							}
 						} else {
 							if ((castling & castlingc<plr>::QueenSide & Pieces[ROOK | plr]) && ((castlingc<plr>::QueenSideSpace & occ) == 0)){
@@ -717,10 +683,9 @@ go infinite
 
 								internal_move smove(castlingc<plr>::QSCKT);
 
-								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
+								if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 							} else {
 								statistics(++ttError_Type1_SameHashKey);
-								killerMoveOk = false;
 							}
 						}
 						halfmoves = 0;
@@ -764,7 +729,7 @@ go infinite
 						};
 
 						internal_move smove(tf, 0);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 						halfmoves = 0;
 					}
 				} else {
@@ -777,6 +742,7 @@ go infinite
 						if (diff & 1) { //capture
 							int capturedPiece, capturedSq;
 							bitboard capturedPos;
+							int killerMoveOk = true;
 							if (promSp <= 0xF) {
 								capturedPiece = QUEEN | (!plr);
 								while ((capturedPiece >= 0) && ((Pieces[capturedPiece] & killerTo) == 0)) capturedPiece -= 2;
@@ -819,7 +785,7 @@ go infinite
 								//ASSUME((Pieces[toPiece] & killerTo)==0);
 								internal_move smove(tf, promSp);
 								
-								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
+								if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 							}
 						} else {
 							int scoreD = Value::piece[PAWN | plr] - Value::piece[toPiece];
@@ -843,7 +809,7 @@ go infinite
 							};
 
 							internal_move smove(tf, promSp);
-							if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
+							if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 							enPassant = 0;
 						}
 					} else {
@@ -857,17 +823,12 @@ go infinite
 	}
 #endif
 #endif
+	unsigned long int kingSq = square(Pieces[KING | plr]);
+
 	//TODO add heuristics
 	bitboard checkedBy = kingIsAttackedBy<plr>(occ, kingSq);
-	//FIXME REMOVE
-#ifndef NDEBUG
-	all = 0;
-	for (int i = PAWN | plr ; i <= (KING | plr) ; i += 2) all |= Pieces[i];
-	for (int i = 0 ; i <= (KING | black) ; ++i) if (oldP[i] != Pieces[i]) std::cout << i << std::hex << Pieces[i] << oldP[i] << std::endl;
-	ASSUME(oldAll == All_Pieces(plr));
-	ASSUME(all == oldAll);
-#endif
-	if (checkedBy == bitboard(0)){
+
+	if (!checkedBy){
 		bitboard nPinnedPawn = getNPinnedPawns<plr>(occ, kingSq);
 		bitboard attacking[2] = {Pieces[PAWN | plr], Pieces[PAWN | plr]};
 		int kingFL = 7 & kingSq;
@@ -891,7 +852,7 @@ go infinite
 			attacking[1] >>= 7;
 			attacking[1] &= notfile7 & lastRank_b;
 		}
-		assert_state();
+
 		for (int captured = QUEEN | (!plr); captured >= 0 ; captured-=2){
 			int scoreD = - Value::piece[PAWN | plr] - Value::piece[captured];
 			for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
@@ -902,8 +863,9 @@ go infinite
 					bitboard from((plr==white)?(to >> diff):(to << -diff));
 					bitboard tf = to | from;
 					unsigned long int toSq = square(to);
+
 					Zobrist toggle = zobrist::keys[captured][toSq];
-					toggle ^= zobrist::keys[PAWN | plr][toSq-diff];
+					toggle        ^= zobrist::keys[PAWN | plr][toSq-diff];
 
 					auto toggleGroupMove = [this, toggle, captured, to, tf, from](){
 						Pieces[captured]   ^= to;
@@ -924,7 +886,7 @@ go infinite
 
 						internal_move smove(tf, prom);
 
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, toggleGroupMove, 0)) return sst.score;
 
 						scoreD -= Value::piece[prom];
 					}
@@ -932,7 +894,7 @@ go infinite
 				}
 			}
 		}
-		assert_state();
+
 		attacking[0] = attacking[1] = Pieces[PAWN | plr];
 		if (plr==white){
 			attacking[0] &= nPinnedPawn | filled::antiDiag[kingAD];
@@ -949,7 +911,7 @@ go infinite
 			attacking[1] >>= 7;
 			attacking[1] &= notfile7 & notlastRank_b;
 		}
-		assert_state();
+
 		for (int captured = QUEEN | (!plr); captured >= 0 ; captured-=2){
 			int scoreGD = Value::piece[captured];
 			pieceScore -= scoreGD;
@@ -974,12 +936,12 @@ go infinite
 
 					internal_move smove(tf, PAWN | plr);
 
-					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, scoreGD)) return sst.score;
+					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, scoreGD)) return sst.score;
 				}
 			}
 			pieceScore += scoreGD;
 		}
-		assert_state();
+
 		for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 			if ((attacking[at] & tmpEnPassant) != 0){
 				bitboard tf = tmpEnPassant;
@@ -1004,10 +966,10 @@ go infinite
 				};
 
 				internal_move smove(tf,  PAWN | plr | TTMove_EnPassantPromFlag);
-				if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -Value::piece[PAWN | (!plr)], [](){}, 0)) return sst.score;
+				if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -Value::piece[PAWN | (!plr)], [](){}, 0)) return sst.score;
 			}
 		}
-		assert_state();
+
 		bitboard empty = ~occ;
 		bitboard pawnsToForward = Pieces[PAWN | plr];
 		if (mode < quiescenceMask){
@@ -1041,13 +1003,13 @@ go infinite
 					};
 
 					internal_move smove(tf, prom);
-					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[PAWN | plr])) return sst.score;
+					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[PAWN | plr])) return sst.score;
 				}
 				toggleGroupMove();
 			}
 			pieceScore += Value::piece[PAWN | plr];
 		}
-		assert_state();
+
 #ifdef HYPERPOSITION
 #define SIZE 64
 #else
@@ -1119,9 +1081,7 @@ go infinite
 		//fromSq[n] = kingSq[plr];//square(frombb[n]);
 		//attack[n] = KingMoves[kingSq[plr]]; KAttack
 		//n : position of last bitboard generated
-		assert_state();
-		if ((castling & castlingrights[plr]) == 0){
-			assert_state();
+		if (!(castling & castlingrights[plr])){
 			for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 				pieceScore -= Value::piece[captured];
 				for (unsigned long int i = 0 ; i < n ; ++i) {
@@ -1146,7 +1106,7 @@ go infinite
 
 						internal_move smove(tf);
 
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
 					}
 				}
 				bitboard tmp = Pieces[captured] & KAttack;
@@ -1173,13 +1133,12 @@ go infinite
 
 						internal_move smove(tf);
 
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
 					}
 					toggleGroupMove();
 				}
 				pieceScore += Value::piece[captured];
 			}
-			assert_state();
 			if (mode < quiescenceMask){
 				halfmoves = oldhm + 1;
 				for (unsigned long int i = 0 ; i < n ; ++i) {
@@ -1200,7 +1159,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 					}
 				}
 				bitboard tmp = KAttack & empty;
@@ -1223,13 +1182,12 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
 			}
 		} else {
-			assert_state();
 			key ct = zobrist::castling[(castling*castlingsmagic)>>60];
 			for (int captured = QUEEN | (!plr); captured >= 0 ; captured -= 2){
 				unsigned int i = 0;
@@ -1255,7 +1213,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
 					}
 				}
 				for ( ; i < firstQueen ; ++i){
@@ -1288,15 +1246,10 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
 					}
 					toggleGroupMove();
 				}
-#ifndef NDEBUG
-							pieceScore += Value::piece[captured];
-				assert_state();
-							pieceScore -= Value::piece[captured];
-#endif
 				for (; i < n ; ++i) {
 					unsigned int fromSq = dt[i].fromSq;
 					bitboard tmp = Pieces[captured] & dt[i].attack;
@@ -1317,14 +1270,9 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
 					}
 				}
-#ifndef NDEBUG
-							pieceScore += Value::piece[captured];
-				assert_state();
-							pieceScore -= Value::piece[captured];
-#endif
 				bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
 				key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 				bitboard tmp = Pieces[captured] & KAttack;
@@ -1353,7 +1301,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1383,7 +1331,7 @@ go infinite
 						};
 
 						internal_move smove(castlingc<plr>::KSCKT);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1409,7 +1357,7 @@ go infinite
 						};
 
 						internal_move smove(castlingc<plr>::QSCKT);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1433,7 +1381,7 @@ go infinite
 						};
 						
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 					}
 				}
 				for (; i < firstQueen ; ++i) {
@@ -1461,7 +1409,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1482,7 +1430,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 					}
 				}
 				bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
@@ -1510,7 +1458,7 @@ go infinite
 						};
 
 						internal_move smove(tf);
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
@@ -1546,7 +1494,7 @@ go infinite
 				};
 
 				internal_move smove(tf, PAWN | plr);
-				if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
+				if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 			}
 			tmp = pawnsToForward;
 			if (plr == white){
@@ -1576,15 +1524,12 @@ go infinite
 				};
 
 				internal_move smove(tf, PAWN | plr);
-				if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
+				if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 			}
 			enPassant = bitboard(0);
 		}
 	} else {
 
-		assert_state();
-		//bitboard tmp = occ;
-		//unsigned long int fromSq;
 		if (!( checkedBy & (checkedBy - 1) )){
 			//1) Capturing the attacking piece
 			unsigned long int toSq = square(checkedBy);
@@ -1626,7 +1571,7 @@ go infinite
 							};
 
 							internal_move smove(tf, PAWN | plr);
-							if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
+							if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 						}
 						togglePartial2Move();
 					}
@@ -1659,7 +1604,7 @@ go infinite
 								};
 
 								internal_move smove(tf, PAWN | plr | TTMove_EnPassantPromFlag);
-								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
+								if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 							}
 							togglePartial2Move();
 						}
@@ -1699,7 +1644,7 @@ go infinite
 
 								internal_move smove(tf, prom);
 
-								if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[attacker]+Value::piece[PAWN | plr])) return sst.score;
+								if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[attacker]+Value::piece[PAWN | plr])) return sst.score;
 							}
 							togglePartial3Move();
 							pieceScore += Value::piece[PAWN | plr];
@@ -1735,7 +1680,7 @@ go infinite
 
 					internal_move smove(tf);
 
-					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
+					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 				}
 				togglePartial2Move();
 			}
@@ -1764,7 +1709,7 @@ go infinite
 
 					internal_move smove(tf);
 
-					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
+					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 				}
 				togglePartial2Move();
 			}
@@ -1798,7 +1743,7 @@ go infinite
 
 					internal_move smove(tf);
 
-					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
+					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 				}
 				togglePartial2Move();
 			}
@@ -1825,7 +1770,7 @@ go infinite
 					};
 
 					internal_move smove(tf);
-					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
+					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[attacker])) return sst.score;
 				}
 				togglePartial2Move();
 			}
@@ -1905,14 +1850,13 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 							internal_move smove(tf, PAWN | plr | TTMove_EnPassantPromFlag);
 
-							if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[PAWN | (!plr)], toggleGroupMove, 0)) return sst.score;
+							if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[PAWN | (!plr)], toggleGroupMove, 0)) return sst.score;
 						}
 						toggleGroupMove();
 					}
 				}
 			}
 #endif
-			assert_state();
 			bitboard tmpP;
 			bitboard tmp2 = Pieces[PAWN | plr];
 			tmp = ray;
@@ -1962,12 +1906,11 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 					internal_move smove(tf, PAWN | plr);
 
-					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 				}
 				toggleGroupMove();
 			}
 			enPassant = 0;
-			assert_state();
 			while (tmpP){
 				bitboard to = pop_lsb(tmpP);
 				bitboard from = (plr == white) ? (to >> 8) : (to << 8);
@@ -1997,14 +1940,13 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 						internal_move smove(tf, prom);
 
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[PAWN | plr])) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[PAWN | plr])) return sst.score;
 					}
 					pieceScore += Value::piece[PAWN | plr];
 					togglePartial2Move();
 				}
 				togglePartialMove();
 			}
-			assert_state();
 			while (tmp){
 				bitboard to = pop_lsb(tmp);
 				bitboard tf = to | ((plr == white) ? (to >> 8) : (to << 8));
@@ -2024,11 +1966,10 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 					internal_move smove(tf, PAWN | plr);
 					
-					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 				}
 				toggleGroupMove();
 			}
-			assert_state();
 			halfmoves = oldhm + 1;
 			tmpP = Pieces[KNIGHT | plr];
 			while (tmpP){
@@ -2054,12 +1995,11 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 						internal_move smove(tf);
 
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
 			}
-			assert_state();
 			tmpP = Pieces[BISHOP | plr];
 			while (tmpP){
 				bitboard from = pop_lsb(tmpP);
@@ -2084,12 +2024,11 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 						internal_move smove(tf);
 
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
 			}
-			assert_state();
 			tmpP = Pieces[ROOK | plr];
 			//Rooks in corners can not get into ray, so changing castling rights is useless
 			//as rooks will never be in a position where they have castling right.
@@ -2116,12 +2055,11 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 						internal_move smove(tf);
 
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
 			}
-			assert_state();
 			tmpP = Pieces[QUEEN | plr];
 			while (tmpP){
 				bitboard from = pop_lsb(tmpP);
@@ -2146,14 +2084,12 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 						internal_move smove(tf);
 
-						if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 					}
 					toggleGroupMove();
 				}
 			}
-			assert_state();
 		}
-		assert_state();
 		//3) Move the king
 		halfmoves = 0;
 		bitboard from = Pieces[KING | plr];
@@ -2189,7 +2125,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 
 					internal_move smove(tf);
 
-					if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -Value::piece[attacker], toggleGroupMove, 0)) return sst.score;
+					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -Value::piece[attacker], toggleGroupMove, 0)) return sst.score;
 				}
 				toggleGroupMove();
 			}
@@ -2218,7 +2154,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				
 				internal_move smove(tf);
 
-				if(deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
+				if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, 0)) return sst.score;
 			}
 			toggleGroupMove();
 		}
@@ -2230,7 +2166,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		zobr   ^= zobrist::blackKey;
 	}
 	enPassant = tmpEnPassant;
-	if (enPassant) zobr ^= zobrist::enPassant[enSq];
+	if (enPassant) zobr ^= zobrist::enPassant[7 & square(enPassant)];
 	if (plr==black) --fullmoves;
 	if (mode == Perft && sst.depth == dividedepth) {
 		U64 moves = stats.horizonNodes;

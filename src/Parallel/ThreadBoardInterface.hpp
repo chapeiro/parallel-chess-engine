@@ -14,7 +14,6 @@
 #include <atomic>
 // #include "../BoardInterface/BoardInterface.hpp"
 #include "../BoardInterface/BareBoardInterface.hpp"
-#include "../Board.hpp"
 
 constexpr unsigned int thread_pop(4);
 constexpr unsigned int UI_index(thread_pop+1);

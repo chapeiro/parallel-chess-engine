@@ -4,7 +4,6 @@
  *  Created on: 18 ��� 2011
  *      Author: Chrysogelos Periklis
  */
-#include "Board.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -43,16 +42,19 @@ void signFile(){
 int communaticate(){
 	//if (debugcc) signFile();
 	char modec[256];
+	int exit_code = 1;
 	string mode;
 	do {
 		if (scanf(" %256[^\n]s\n", modec) == EOF) break;//getline(cin, mode);
 		mode = modec;
 		if (mode.find("uci")!=string::npos){
-			return uci();
+			exit_code = uci();
+			break;
 		} else if (mode.compare("xboard")==0){
 			cout << "xboard protocol currently not supported" << endl;
 		} else if (mode.find("exit")!=string::npos || mode.find("quit")!=string::npos){
-			return 0;
+			exit_code = 0;
+			break;
 		} else if (mode.find("precompute data")!=string::npos){
 			std::cout << ndbgline << "Generating Data. Please Wait..." << endl;
 			initializeEngine();
@@ -151,7 +153,9 @@ int communaticate(){
 			}
 		}
 	} while (true);
-	return 1;
+	board_interface->stop();
+	delete board_interface;
+	return exit_code;
 }
 
 void debug(string a){

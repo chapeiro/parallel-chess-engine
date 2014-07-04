@@ -2,11 +2,12 @@
 # PROFILE=1
 
 DEBUGFLAGS= -g3 -pg -ggdb 
-DEBUGFLAGS+= -funsafe-loop-optimizations
-DEBUGFLAGS+= -Wunsafe-loop-optimizations
+# DEBUGFLAGS+= -funsafe-loop-optimizations
+# DEBUGFLAGS+= -Wunsafe-loop-optimizations
 
 TFLAGS= -O3 
 TFLAGS+= -finline 
+TFLAGS+= -funit-at-a-time
 TFLAGS+= -march=native
 TFLAGS+= -fmerge-all-constants
 TFLAGS+= -fmodulo-sched
@@ -22,6 +23,7 @@ TFLAGS+= -ftracer
 TFLAGS+= -funroll-loops
 TFLAGS+= -fwhole-program
 TFLAGS+= -flto
+TFLAGS+= -finline-limit=60000
 
 # DEBUGFLAGS+=$(TFLAGS)
 OPTFLAGS= $(TFLAGS)

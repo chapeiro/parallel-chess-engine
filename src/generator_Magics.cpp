@@ -11,7 +11,6 @@
 #include <ctime>
 #include "cchapeiro.hpp"
 #include "SquareMapping.hpp"
-#include "Board.hpp"
 //#define bf
 
 typedef chapeiro::bitboard bitboard;
