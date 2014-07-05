@@ -1,0 +1,48 @@
+# GitEye Files
+.cproject
+.project
+
+# Object Files
+*.o
+
+# Sublime files
+*.sublime-project
+*.sublime-workspace
+
+# Non-Archive Executables
+bin
+
+# Eclipse files
+.settings
+.metadata
+
+# Dependency Files
+.depend
+
+# Data Archives
+*.7z*
+
+# Uncommited Alternatives
+Alternatives
+
+# Tools
+Tools
+
+# Performance Profiles
+*.sleepy
+*.at
+
+# Back Ups
+Back Up
+
+# Game Archives
+*.pgn
+
+# Todo Files
+*.do
+
+# Log Files
+*.log
+
+# ICS Files
+.icsrs
