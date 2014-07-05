@@ -20,6 +20,7 @@
 #define START_FEN ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
 class Board;
+struct internal_move;
 
 class BoardInterface{
     public:
@@ -30,8 +31,10 @@ class BoardInterface{
         virtual bool printBoard()                                           = 0;
         virtual void ui_garbage_collection()                                = 0;
         virtual bool go(int depth, time_control tc)                         = 0;
-        virtual bool search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, chapeiro::bitboard tf, int prom)     = 0;
-        virtual bool collectNextScore(int &score, unsigned int thrd_id)     = 0;
+        virtual bool search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child)   = 0;
+        virtual bool collectNextScore(int &score, unsigned int thrd_id, int depth, internal_move &child)                                = 0;
+        virtual void increaseDepth(unsigned int thrd_id) {}
+        virtual void decreaseDepth(unsigned int thrd_id) {}
         // virtual void perft()                                = 0;
         virtual void stop()                                 = 0;
 };

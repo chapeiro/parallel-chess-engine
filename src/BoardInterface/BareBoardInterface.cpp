@@ -46,12 +46,12 @@ bool BareBoardInterface::go(int depth, time_control tc){
     return (board);
 }
 
-bool BareBoardInterface::search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, chapeiro::bitboard tf, int prom){
+bool BareBoardInterface::search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child){
     assert(false);
     return false;
 }
 
-bool BareBoardInterface::collectNextScore(int &score, unsigned int thrd_id){
+bool BareBoardInterface::collectNextScore(int &score, unsigned int thrd_id, int depth, internal_move &child){
     assert(false);
     return false;
 }

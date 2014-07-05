@@ -26,8 +26,8 @@ public:
     virtual bool makeMove(chapeiro::move m);
     virtual bool printBoard();
     virtual bool go(int depth, time_control tc);
-    virtual bool search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, chapeiro::bitboard tf, int prom);
-    virtual bool collectNextScore(int &score, unsigned int thrd_id);
+    virtual bool search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child);
+    virtual bool collectNextScore(int &score, unsigned int thrd_id, int depth, internal_move &child);
     virtual void ui_garbage_collection();
     // virtual void perft();
     virtual void stop();

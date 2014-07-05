@@ -168,6 +168,19 @@ constexpr bitboard castlingrights[2] = {0x0000000000000081ull, 0x810000000000000
 
 #define All_Pieces(x) ((((x)&colormask)==WHITE) ? White_Pieces : Black_Pieces)
 
+
+struct internal_move{
+	bitboard tf;
+	unsigned int prom;
+
+	public:
+		inline internal_move(bitboard tf, unsigned int prom);
+		inline internal_move(bitboard tf);
+
+		inline void set(bitboard tf, unsigned int prom) __restrict;
+		inline void set(bitboard tf) __restrict;
+};
+
 class Task;
 
 struct node_statistics{
@@ -231,19 +244,6 @@ class Board { //cache_align
 		HANDLE child_input_write;
 		HANDLE child_output_read;
 #endif
-
-	public:
-		struct internal_move{
-			bitboard tf;
-			unsigned int prom;
-
-			public:
-				inline internal_move(bitboard tf, unsigned int prom);
-				inline internal_move(bitboard tf);
-
-				inline void set(bitboard tf, unsigned int prom) __restrict;
-				inline void set(bitboard tf) __restrict;
-		};
 
 	private:
 		struct search_state{
@@ -334,25 +334,25 @@ class Board { //cache_align
 
 		template<SearchMode mode, color plr, bool root> void prepare_beta_cutoff(int oldhm, bitboard old_enpassant, const internal_move& move_entry, int depth, int beta) __restrict;
 
-		template<SearchMode mode, color plr> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict;
+		template<SearchMode mode, color plr> void searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score, const internal_move& move_entry) __restrict;
 		template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2>
-			inline __attribute__((always_inline)) bool deeper(const internal_move &child, int oldhm, bitboard old_enpassant, search_state &sst, const UnaryPredicate& toggleMove, int scoreD, const UnaryPredicate2& toggleGroupMove, int scoreGD) __restrict;
+			inline __attribute__((always_inline)) bool deeper(const internal_move &child, int oldhm, bitboard old_enpassant, search_state &sst, const UnaryPredicate &toggleMove, int scoreD, const UnaryPredicate2 &toggleGroupMove, int scoreGD) __restrict;
 		template<SearchMode mode, color plr, bool root> int search(int alpha, int beta, int depth) __restrict;
 		template<color plr> int quieSearch(int alpha, int beta) __restrict;
 
 		bool threefoldRepetition() __restrict;
 };
 
-inline Board::internal_move::internal_move(bitboard tf, unsigned int prom): tf(tf), prom(prom){ }
+inline internal_move::internal_move(bitboard tf, unsigned int prom): tf(tf), prom(prom){ }
 
-inline Board::internal_move::internal_move(bitboard tf): tf(tf), prom(0){ }
+inline internal_move::internal_move(bitboard tf): tf(tf), prom(0){ }
 
-inline void Board::internal_move::set(bitboard tf, unsigned int prom) __restrict{
+inline void internal_move::set(bitboard tf, unsigned int prom) __restrict{
 	this->tf   = tf;
 	this->prom = prom;
 }
 
-inline void Board::internal_move::set(bitboard tf) __restrict{
+inline void internal_move::set(bitboard tf) __restrict{
 	this->tf   = tf;
 }
 
@@ -466,19 +466,20 @@ template<color plr> inline bool Board::validPosition(int kingSq) __restrict{
 	return notAttacked<!plr>(Pieces[KING | plr], kingSq);
 }
 
-template<SearchMode mode, color plr> inline void Board::searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score) __restrict{
+template<SearchMode mode, color plr> inline void Board::searchDeeper(int alpha, int beta, int depth, bool pvFound, int &score, const internal_move& move_entry) __restrict{
 	addToHistory(zobr);
 	if (mode >= quiescenceMask){
 		score = -search<mode, plr, false>(-beta, -alpha, depth - 1);
 	} else if (mode == PV){
 		if (pvFound) {
-			playing = plr; //will only be used in search deeper, when copying the board, so it must be fine...
-			if (!(board_interface->search(this, thread_id, depth, alpha, beta, 0, 0))){
+			if (!(board_interface->search(this, thread_id, depth, alpha, beta, move_entry))){
+				board_interface->increaseDepth(thread_id);
 				score = -search<ZW, plr, false>(-1-alpha, -alpha, depth - 1);
 				if ( score > alpha ) {
 					score = -search<PV, plr, false>(-beta, -alpha, depth - 1);
 				}
-			}
+				board_interface->decreaseDepth(thread_id);
+			} else score = alpha;
 		} else {
 			score = -search<PV, plr, false>(-beta, -alpha, depth - 1);
 		}
@@ -506,10 +507,14 @@ inline void Board::prepare_beta_cutoff(int oldhm, bitboard old_enpassant, const 
 }
 
 template<SearchMode mode, color plr, bool root, class UnaryPredicate, class UnaryPredicate2>
-inline __attribute__((always_inline)) bool Board::deeper(const internal_move &child, int oldhm, bitboard old_enpassant, search_state &sst, const UnaryPredicate& toggleMove, int scoreD, const UnaryPredicate2& toggleGroupMove, int scoreGD) __restrict{
+inline __attribute__((always_inline)) bool Board::deeper(const internal_move &child, int oldhm, bitboard old_enpassant, search_state &sst, const UnaryPredicate &toggleMove, int scoreD, const UnaryPredicate2 &toggleGroupMove, int scoreGD) __restrict{
 	pieceScore += scoreD;
 	toggleMove();
-	searchDeeper<mode, !plr>(sst.alpha, sst.beta, sst.depth, sst.pvFound, sst.score);
+	playing = !plr;
+	zobr   ^= zobrist::blackKey;
+	searchDeeper<mode, !plr>(sst.alpha, sst.beta, sst.depth, sst.pvFound, sst.score, child);
+	zobr   ^= zobrist::blackKey;
+	playing = plr;
 	toggleMove();
 	pieceScore -= scoreD;
 
@@ -518,10 +523,10 @@ inline __attribute__((always_inline)) bool Board::deeper(const internal_move &ch
 		toggleGroupMove();
 
 		halfmoves = oldhm;
-		if (!root) {
-			playing = !plr;
-			zobr   ^= zobrist::blackKey;
-		}
+		// if (!root) {
+		// 	playing = !plr;
+		// 	zobr   ^= zobrist::blackKey;
+		// }
 		enPassant = old_enpassant;
 		if (old_enpassant) zobr ^= zobrist::enPassant[7 & square(old_enpassant)];
 		if (plr == black) --fullmoves;
@@ -530,6 +535,13 @@ inline __attribute__((always_inline)) bool Board::deeper(const internal_move &ch
 		statistics(++betaCutOff);
 		// prepare_beta_cutoff<mode, plr, root>(oldhm, old_enpassant, child, sst.depth, sst.beta);
 		sst.score = sst.beta;		// fail-hard beta-cutoff
+		assert_state();
+
+		{
+			int g1;
+			internal_move g2(0, 0);
+			while (board_interface->collectNextScore(g1, thread_id, sst.depth, g2));
+		}
 		return true;
 	}
 	sst.pvFound = true;
@@ -579,15 +591,16 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		}
 		//Horizon has been reached! Start quiescence search
 		//return search<QuiescencePV, plr>(alpha, beta, depth);
-		return search<(SearchMode) (mode | quiescenceMask), plr, root>(mode==ZW?beta-1:alpha, beta, depth);
+		return search<(SearchMode) (mode | quiescenceMask), plr, false>(mode==ZW?beta-1:alpha, beta, depth);
 	}
 #ifndef NO_TRANSPOSITION_TABLE
 	//FIXME fix
-	int killerMove = retrieveTTEntry<mode>(zobr, depth, alpha, beta);
+	search_state sst(alpha, beta, depth);
+	int killerMove = retrieveTTEntry<mode>(zobr, sst.depth, sst.alpha, sst.beta);
 	//if (ttResult == ttExactScoreReturned) return alpha;
-	if (alpha >= beta) {
+	if (sst.alpha >= sst.beta) {
 		statistics(++hashHitCutOff);
-		return alpha;
+		return sst.alpha;
 	}
 #endif
 	//move state forward (halfmoves (oldhm), fullmoves (fullmoves+{0, 1}(plr)), enPassant (tmpEnPassant)
@@ -599,33 +612,23 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 	enPassant = bitboard(0);
 	halfmoves = 0;
 
-	if (!root) {
-		playing = plr;
-		zobr   ^= zobrist::blackKey;
-	}
+	if (root) std::cout << "hereD" << std::endl;
+
+	// if (!root) {
+	// 	playing = plr;
+	// 	zobr   ^= zobrist::blackKey;
+	// }
+
+	assert_state();
 
 	U64 stNodes (stats.nodes);
+
+#ifdef DIVIDEPERFT
 	U64 stHorNodes (stats.horizonNodes);
-
-	search_state sst(alpha, beta, depth);
-
-#ifndef NDEBUG
-	bitboard all = 0;
-	for (int i = PAWN | plr ; i <= (KING | plr) ; i += 2) all |= Pieces[i];
-	ASSUME(All_Pieces(plr) == all);
-	/**
-uci
-isready
-ucinewgame
-isready
-position startpos moves g1f3 g8f6 d2d4 d7d5 c2c4 c7c6 e2e3 c8g4 b1c3 e7e6 h2h3 g4h5 g2g4 h5g6 f3e5 b8d7 e5g6 h7g6 d1b3 d8c7 f1g2 d5c4 b3c4 e8c8 g4g5 f6d5 g2d5 e6d5 c4b3 d8e8 e1f1 d7b6 h3h4 f7f6 g5f6 g7f6 h1g1 h8h4 g1g6 c7h7
-go infinite
-	 */
-	all = 0;
-	for (int i = PAWN | (!plr) ; i <= (KING | (!plr)) ; i += 2) all |= Pieces[i];
-	ASSUME(All_Pieces(!plr) == all);
 #endif
+
 	const bitboard occ = All_Pieces(white) | All_Pieces(black);
+
 #ifndef NO_TRANSPOSITION_TABLE
 #ifndef NO_KILLER_MOVE
 	if (mode != Perft){
@@ -713,7 +716,7 @@ go infinite
 						if (capturedPiece >= 0){
 							halfmoves = 0;
 							toggle ^= zobrist::keys[capturedPiece][killerToSq];
-							scoreD = Value::piece[capturedPiece];
+							scoreD = -Value::piece[capturedPiece];
 						} else {
 							halfmoves = oldhm + 1;
 						}
@@ -729,7 +732,7 @@ go infinite
 						};
 
 						internal_move smove(tf, 0);
-						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
+						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 						halfmoves = 0;
 					}
 				} else {
@@ -768,7 +771,7 @@ go infinite
 							}
 							if (killerMoveOk) {
 								ASSUME((toPiece & colormask) == plr);
-								int scoreD = Value::piece[capturedPiece] + Value::piece[PAWN | plr] - Value::piece[toPiece];
+								int scoreD = - Value::piece[capturedPiece] - Value::piece[PAWN | plr] + Value::piece[toPiece];
 								Zobrist toggle = zobrist::keys[capturedPiece][capturedSq];
 								toggle ^= zobrist::keys[PAWN | plr][killerFromSq];
 								toggle ^= zobrist::keys[toPiece][killerToSq];
@@ -788,12 +791,13 @@ go infinite
 								if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
 							}
 						} else {
-							int scoreD = Value::piece[PAWN | plr] - Value::piece[toPiece];
+							int scoreD = - Value::piece[PAWN | plr] + Value::piece[toPiece];
 							Zobrist toggle = zobrist::keys[PAWN | plr][killerFromSq];
 							toggle        ^= zobrist::keys[toPiece][killerToSq];
+							bitboard toggleEnPassant(0);
 							if (killerToSq == (killerFromSq + ((plr == white) ? 16 : -16))){
-								toggle   ^= zobrist::enPassant[7&(killerFromSq + ((plr == white) ? 8 : -8))];
-								enPassant = ((plr == white) ? (killerFrom << 8) : (killerFrom >> 8));
+								toggle   ^= zobrist::enPassant[7&killerFromSq];
+								toggleEnPassant = ((plr == white) ? (killerFrom << 8) : (killerFrom >> 8));
 							}
 							ASSUME(Pieces[PAWN | plr] & killerFrom);
 							ASSUME(toPiece >= (PAWN | white));
@@ -801,16 +805,16 @@ go infinite
 							ASSUME((toPiece & colormask) == plr);
 							ASSUME((Pieces[toPiece] & killerTo) == 0);
 
-							auto toggleMove = [this, toggle, toPiece, killerFrom, killerTo, tf](){
+							auto toggleMove = [this, toggle, toPiece, killerFrom, killerTo, tf, toggleEnPassant](){
 								Pieces[PAWN | plr] ^= killerFrom;
 								Pieces[toPiece]    ^= killerTo;
 								All_Pieces(plr)    ^= tf;
 								zobr               ^= toggle;
+								enPassant          ^= toggleEnPassant;
 							};
 
 							internal_move smove(tf, promSp);
 							if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, scoreD, [](){statistics(++cutOffByKillerMove);}, 0)) return sst.score;
-							enPassant = 0;
 						}
 					} else {
 						statistics(++ttError_Type1_SameHashKey);
@@ -1150,12 +1154,12 @@ go infinite
 						unsigned long int toSq = square(to);
 						unsigned int mpiece = dt[i].piecet;
 						Zobrist toggle = zobrist::keys[mpiece][toSq];
-						toggle ^= zobrist::keys[mpiece][fromSq];
+						toggle        ^= zobrist::keys[mpiece][fromSq];
 
 						auto toggleMove = [this, toggle, tf, mpiece](){
 							All_Pieces(plr) ^= tf;
 							Pieces[mpiece]  ^= tf;
-							zobr ^= toggle;
+							zobr            ^= toggle;
 						};
 
 						internal_move smove(tf);
@@ -1503,30 +1507,25 @@ go infinite
 				tmp = ( ( ( ( tmp & pstartRank_b ) >> 8 ) & empty ) >> 8 ) & empty;
 			}
 			while (tmp){
-				bitboard to = pop_lsb(tmp), tf;
-				if (plr == white){
-					tf = to | (to >> 16);
-					enPassant = to >> 8;
-				} else {
-					tf = to | (to << 16);
-					enPassant = to << 8;
-				}
-				unsigned long int toSq  = square(to);
-				unsigned long int tmpSq = square(enPassant);
+				bitboard to = pop_lsb(tmp);
+				bitboard toggleEnPassant((plr==white) ? (to >> 8) : (to << 8));
+				bitboard tf(to | ((plr == white) ? (to >> 16) : (to << 16)));
+				unsigned int toSq  = square(to);
+				unsigned int tmpSq = square(toggleEnPassant);
 				Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
 				toggle ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-16:16)];
 				toggle ^= zobrist::enPassant[7&tmpSq];
 
-				auto toggleMove = [this, toggle, tf](){
+				auto toggleMove = [this, toggle, tf, toggleEnPassant](){
 					All_Pieces(plr)    ^= tf;
 					Pieces[PAWN | plr] ^= tf;
 					zobr               ^= toggle;
+					enPassant          ^= toggleEnPassant;
 				};
 
 				internal_move smove(tf, PAWN | plr);
 				if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 			}
-			enPassant = bitboard(0);
 		}
 	} else {
 
@@ -1881,20 +1880,22 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			while (tmp2){
 				bitboard to = pop_lsb(tmp2);
 				bitboard tf = to;
+				bitboard toggleEnPassant;
 				if (plr == white){
 					tf |= (tf >> 16);
-					enPassant = to >> 8;
+					toggleEnPassant = to >> 8;
 				} else {
 					tf |= (tf << 16);
-					enPassant = to << 8;
+					toggleEnPassant = to << 8;
 				}
-				auto toggleGroupMove = [this, tf](){
+				auto toggleGroupMove = [this, tf, toggleEnPassant](){
 					All_Pieces(plr) ^= tf;
+					enPassant       ^= toggleEnPassant;
 				};
 				toggleGroupMove();
 				if (validPositionNonChecked<plr>(kingSq)) {
 					toSq  = square(to);
-					tmpSq = square(enPassant);
+					tmpSq = square(toggleEnPassant);
 					Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
 					toggle ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-16:16)];
 					toggle ^= zobrist::enPassant[7&tmpSq];
@@ -1910,7 +1911,6 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				}
 				toggleGroupMove();
 			}
-			enPassant = 0;
 			while (tmpP){
 				bitboard to = pop_lsb(tmpP);
 				bitboard from = (plr == white) ? (to >> 8) : (to << 8);
@@ -2159,19 +2159,52 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			toggleGroupMove();
 		}
 	}
-	while (board_interface->collectNextScore(sst.score, thread_id));
-	halfmoves = oldhm;
-	if (!root) {
-		playing = !plr;
-		zobr   ^= zobrist::blackKey;
+	{
+		bool beta_cutoff = false;
+		int beta_cutoff_move = 0;
+		int loc_beta = sst.beta;
+		int col_score;
+		internal_move child(0, 0);
+		while (board_interface->collectNextScore(col_score, thread_id, depth, child)){
+			if( col_score >= loc_beta ) {
+				loc_beta = col_score;
+				beta_cutoff_move = getMove<plr>(child.tf, child.prom);
+				beta_cutoff = true;
+			}
+			sst.pvFound = true;
+			if( ( mode == PV || mode >= quiescenceMask ) && col_score > sst.alpha){
+				sst.alpha = col_score;		//Better move found!
+				sst.bmove = child;
+				if (root) std::cout << "Lmove_" << std::hex << child.tf << std::dec << std::endl;
+			}
+		}
+
+		if (beta_cutoff){
+			halfmoves = oldhm;
+
+			enPassant = tmpEnPassant;
+			if (tmpEnPassant) zobr ^= zobrist::enPassant[7 & square(tmpEnPassant)];
+			if (plr == black) --fullmoves;
+
+			addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, sst.depth, beta_cutoff_move, sst.beta);
+			statistics(++betaCutOff); 											// fail-hard beta-cutoff
+			assert_state();
+			return sst.beta;
+		}
 	}
+
+	halfmoves = oldhm;
+	// if (!root) {
+	// 	playing = !plr;
+	// 	zobr   ^= zobrist::blackKey;
+	// }
 	enPassant = tmpEnPassant;
 	if (enPassant) zobr ^= zobrist::enPassant[7 & square(enPassant)];
 	if (plr==black) --fullmoves;
+#ifdef DIVIDEPERFT
 	if (mode == Perft && sst.depth == dividedepth) {
 		U64 moves = stats.horizonNodes;
 		moves -= stHorNodes;
-#ifdef DIVIDEPERFT
 		DWORD bytes_read, bytes_written;
 		CHAR buffer[4096];
 		// Write a message to the child process
@@ -2198,30 +2231,32 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			pre = oldpre;
 			dividedepth = depth;
 		}
-#else
-		// std::cout << pre << getFEN(plr) << '\t' << moves << std::endl;
-#endif
 	}
+#endif
 	if (mode == Perft) return sst.alpha + 1;
-	if (!interruption_requested){
-		if (mode < quiescenceMask){
-			if (stNodes == stats.nodes){
-				if (checkedBy == bitboard(0)) {
-					sst.alpha = 0;								//PAT
-				} else {
-					sst.alpha = -Value::MAT+rootDepth-sst.depth;	//MATed
-				}
-				addTTEntry<ExactScore>(zobr, sst.depth, 0,sst.alpha);//ExactScore
-			} else if (sst.alpha != alpha) {
-				assert(sst.bmove.tf != bitboard(0));
-				addTTEntry<AlphaCutoff>(zobr, sst.depth, getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
+	if (mode < quiescenceMask){
+		if (root) std::cout << "hereC" << std::endl;
+		if (stNodes == stats.nodes){
+			if (checkedBy == bitboard(0)) {
+				sst.alpha = 0;									//PAT
 			} else {
-				assert(sst.bmove.tf == bitboard(0));//ExactScore
-				addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
+				sst.alpha = -Value::MAT+rootDepth-sst.depth;	//MATed
 			}
+			addTTEntry<ExactScore>(zobr, sst.depth, 0, sst.alpha);//ExactScore
+		} else if (!sst.pvFound) {
+			if (root) std::cout << "hereA" << std::endl;
+			assert(sst.bmove.tf != bitboard(0));
+			addTTEntry<AlphaCutoff>(zobr, sst.depth, getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
 		} else {
-			addTTEntry<QSearchAlphaCutoff>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
+			if (root) std::cout << "hereB" << std::endl;
+			if (root) std::cout << std::hex << sst.bmove.tf << std::dec << std::endl;
+			// assert(sst.bmove.tf == bitboard(0));//ExactScore
+			if (root) std::cout << addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha) << std::endl;
+			else addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
+			
 		}
+	} else {
+		addTTEntry<QSearchAlphaCutoff>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
 	}
 	return sst.alpha;
 }

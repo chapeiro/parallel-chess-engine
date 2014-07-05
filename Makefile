@@ -23,7 +23,6 @@ TFLAGS+= -ftracer
 TFLAGS+= -funroll-loops
 TFLAGS+= -fwhole-program
 TFLAGS+= -flto
-TFLAGS+= -finline-limit=60000
 
 # DEBUGFLAGS+=$(TFLAGS)
 OPTFLAGS= $(TFLAGS)

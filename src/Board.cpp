@@ -172,6 +172,9 @@ void Board::make(chapeiro::move m){
 		togglePlaying();
 		return;
 	}
+
+	if (enPassant) zobr ^= zobrist::enPassant[7&square(enPassant)];
+
 	int from = index(m.fromX, m.fromY);
 	int to = index(m.toX, m.toY);
 	if ((Pieces[PAWN | playing] & filled::normal[from])!=0){
@@ -598,18 +601,20 @@ void Board::go(int maxDepth, time_control tc){
 			score = search<PV, black, true>(alpha, beta, depth);
 		}
 		if (interruption_requested) {
-			// ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
+			//ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
 			break; //DO NOT USE THE SCORE RETURNED BY SEARCH!!! IT IS NOT VALID!!!
 		}
-		tm.search_lap_tick();
-		move = getBestMove(zobr);
+		int tmove = getBestMove(zobr);
+		if (tmove | move) tm.search_lap_tick();
+		move = tmove;
+		
 		std::chrono::milliseconds etime(tm.getElapsedTime());
 		//Sending Infos
 		std::cout << "info";
 		std::cout << " depth " << depth;
 		std::cout << " time " << etime.count();
-		std::cout << " nodes " << gstats.nodes-stNodes;
-		if (etime.count() >= 1000) std::cout << " nps " << (U64) (((gstats.nodes-stNodes)*1000ull) / (etime / 1000.0).count());
+		std::cout << " nodes " << (gstats.nodes+stats.nodes)-stNodes;
+		if (etime.count() >= 1000) std::cout << " nps " << (U64) ((((gstats.nodes+stats.nodes)-stNodes)*1000ull) / (etime / 1000.0).count());
 
 		Board * extrPv = new Board(this);
 		std::cout << " pv " << extrPv->extractPV(depth);

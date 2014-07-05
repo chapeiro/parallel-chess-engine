@@ -15,7 +15,7 @@
 // #include "../BoardInterface/BoardInterface.hpp"
 #include "../BoardInterface/BareBoardInterface.hpp"
 
-constexpr unsigned int thread_pop(4);
+constexpr unsigned int thread_pop(8);
 constexpr unsigned int UI_index(thread_pop+1);
 constexpr unsigned int task_pop(8); // per thread
 constexpr unsigned int thrd_id_offset(16);
@@ -47,8 +47,7 @@ private:
     int                     alpha;
     int                     beta;
     int                     score;
-    bitboard                tf;
-    int                     prom;
+    internal_move           move;
     std::atomic<State>      st;
     std::mutex              st_m; //lock only to get in Executing or Completed
     uint64_t                job_id;
@@ -74,13 +73,15 @@ public:
     thread_data();
     task_id createGoTask(Board *b, int depth, time_control tc);
     int collectNextScore();
-    task_id search(Board * __restrict brd, int depth, int alpha, int beta, bitboard tf, int prom);
+    task_id search(Board * __restrict brd, int depth, int alpha, int beta, const internal_move &child);
 
-    bool collectNextScore(int &score);
-    bool lazy_execute(task_bitmask mask, int &score);
+    bool collectNextScore(int &score, int depth, internal_move &child);
+    bool lazy_execute(task_bitmask mask, int &score, int depth, internal_move &child);
 protected:
     task_id createTaskId(unsigned int t) const;
     unsigned int peek_task();
+    void increaseDepth();
+    void decreaseDepth();
     void ui_garbage_collection();
 };
 
@@ -107,12 +108,14 @@ public:
     virtual ~ThreadBoardInterface();
 
     virtual bool go(int depth, time_control tc);
-    virtual bool search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, chapeiro::bitboard tf, int prom);
+    virtual bool search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child);
     // virtual void perft();
     virtual void stop();
     virtual void ui_garbage_collection();
 
-    virtual bool collectNextScore(int &score, unsigned int thrd_id);
+    virtual bool collectNextScore(int &score, unsigned int thrd_id, int depth, internal_move &child);
+    virtual void increaseDepth(unsigned int thrd_id);
+    virtual void decreaseDepth(unsigned int thrd_id);
     void block();
 private:
     void run(unsigned int thrd_id);
