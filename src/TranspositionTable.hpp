@@ -77,16 +77,16 @@ template<SearchState state> inline bool replaceTTEntry(U64 data, int depth){
 
 void ttPreparePVS(chapeiro::zobrist zobr);
 
-template<SearchState state> inline bool addTTEntry(chapeiro::zobrist zobr, int depth, int move, int score){
+template<SearchState state> inline int addTTEntry(chapeiro::zobrist zobr, int depth, int move, int score){
 	//if (state > 2) return;
-	if (interruption_requested) return false;
+	if (interruption_requested) return 0;
 	int index = getTTIndex(zobr);
 	ttEntry * entry = transpositionTable + index;
 	U64 data = entry->data;
 	if (!data){
 		++ttUsed;
 	} else if (!replaceTTEntry<state>(data, depth)) {
-		return false;
+		return tte_getDepth(data);
 	}
 	U64 newData = ((U64) state) << tte_shift_searchState;
 	newData |= (((U64) depth) & tte_mask_depth) << tte_shift_depth;

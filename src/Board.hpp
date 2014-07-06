@@ -606,13 +606,20 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 	//move state forward (halfmoves (oldhm), fullmoves (fullmoves+{0, 1}(plr)), enPassant (tmpEnPassant)
 	int oldhm (halfmoves);
 
+	if (root) {
+		std::cout << "hereD";
+		int index = getTTIndex(zobr);
+		ttEntry * entry = transpositionTable + index;
+		U64 data = entry->data;
+		std::cout << std::hex << data << std::dec << std::endl;
+	}
+
 	if (enPassant) zobr ^= zobrist::enPassant[7 & square(enPassant)];
 	bitboard tmpEnPassant (enPassant);
 	fullmoves += plr;							//if (plr==black) ++fullmoves;
 	enPassant = bitboard(0);
 	halfmoves = 0;
 
-	if (root) std::cout << "hereD" << std::endl;
 
 	// if (!root) {
 	// 	playing = plr;
@@ -2251,7 +2258,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			if (root) std::cout << "hereB" << std::endl;
 			if (root) std::cout << std::hex << sst.bmove.tf << std::dec << std::endl;
 			// assert(sst.bmove.tf == bitboard(0));//ExactScore
-			if (root) std::cout << addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha) << std::endl;
+			if (root) std::cout << std::hex << addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha) << std::dec << std::endl;
 			else addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
 			
 		}

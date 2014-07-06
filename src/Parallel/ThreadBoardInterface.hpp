@@ -17,11 +17,13 @@
 
 constexpr unsigned int thread_pop(8);
 constexpr unsigned int UI_index(thread_pop+1);
+constexpr unsigned int MASTER_index(thread_pop);
 constexpr unsigned int task_pop(8); // per thread
 constexpr unsigned int thrd_id_offset(16);
 constexpr unsigned int thr_task_mask((1 << task_pop) - 1);
 
 typedef unsigned int task_id;
+#define MPI_CCHAPEIRO_TASK_ID MPI_UNSIGNED
 typedef uint32_t     task_bitmask;
 constexpr task_id no_task(-2);
 
@@ -39,6 +41,7 @@ enum State{
 
 class Task{
     friend class thread_data;
+    friend void runProcessCommunicator(int argc, char* argv[]);
 private:
     std::atomic<Board*>     board;
     TaskType                type;
@@ -61,6 +64,7 @@ public:
 
 class thread_data{
     friend class ThreadBoardInterface;
+    friend void runProcessCommunicator(int argc, char* argv[]);
 private:
     std::thread*    thrd;
     unsigned int    thrd_id;
@@ -121,8 +125,18 @@ private:
     void run(unsigned int thrd_id);
     void execute(task_id t, unsigned int id);
 
+
+public:
     static constexpr task_id createBomb(){
         return (~task_id(0));
+    }
+
+    static constexpr task_id createPrInterrupt(){
+        return (~task_id(2));
+    }
+
+    static constexpr bool isPrInterrupt(task_id t){
+        return (t == createPrInterrupt());
     }
 
     static constexpr bool isBomb(task_id t){

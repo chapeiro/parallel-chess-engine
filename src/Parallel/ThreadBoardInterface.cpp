@@ -56,10 +56,12 @@ ThreadBoardInterface::ThreadBoardInterface(bool hasUI):
     }
 
     thr_dt[UI_index].thrd = NULL;
+    thr_dt[MASTER_index].thrd = NULL;
 
     if (hasUI) thr_dt[UI_index].thrd = new std::thread(&communaticate);
     
     thr_dt[UI_index].thrd_id = UI_index;
+    thr_dt[MASTER_index].thrd_id = MASTER_index;
 }
 
 ThreadBoardInterface::~ThreadBoardInterface(){
@@ -71,7 +73,7 @@ ThreadBoardInterface::~ThreadBoardInterface(){
     lk.unlock();
 
     //send bombs to kill threads
-    for (unsigned int i = 0 ; i < thread_pop ; ++i) {
+    for (unsigned int i = 0 ; i < thread_pop+1 ; ++i) { //+1 for master
         pending_tasks_queue.push(createBomb());
     }
     pending_tasks_cv.notify_all();
@@ -81,11 +83,24 @@ ThreadBoardInterface::~ThreadBoardInterface(){
         thr_dt[i].thrd->join();
         delete thr_dt[i].thrd;
     }
+
+    //Posible configurations:
+    // Master | UI
+    //    1   |  1   => blocked = 0 (  ui   calls destructor)
+    //    0   |  1   => blocked = 1 (  ui   calls destructor)
+    //    1   |  0   => blocked = 0 (master calls destructor)
+
+    //if UI thread exists, UI is the only one allowed to call this destructor
+    //in this case, MASTER (if exists) is notified by the bomb send above.
+    //if UI thread does not exists, MASTER is the only one allowed to call
+    //this destructor. Master will not be in blocked count, so running_cv.wait
+    //will immediatly exit
     std::unique_lock<std::mutex> rlk(running_m);
     exiting = true;
     running_cv.notify_all();
     running_cv.wait(rlk, [this](){return (blocked == 0);});
     rlk.unlock();
+    //do NOTHING after this unlock!!!!!!
     //FIXME UI calls this ? If not, should be joined... else? detach ?
 }
 

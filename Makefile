@@ -1,6 +1,8 @@
 # DEBUG=1
 # PROFILE=1
 
+CXX=mpic++
+
 DEBUGFLAGS= -g3 -pg -ggdb 
 # DEBUGFLAGS+= -funsafe-loop-optimizations
 # DEBUGFLAGS+= -Wunsafe-loop-optimizations
@@ -31,7 +33,8 @@ OPTFLAGS+= -DNDEBUG
 INCLUDE_PATH=-I. 
 
 CXXFLAGS= -Wl,--no-as-needed -lpthread -pthread -std=c++11 -Wall -D_GNU_SOURCE 
-
+CXXFLAGS+= -D__STDC_FORMAT_MACROS 
+CXXFLAGS+= -DMULTIPROC
 CXXFLAGS+= $(INCLUDE_PATH)
 
 # ifeq ($(PROFILE),1)

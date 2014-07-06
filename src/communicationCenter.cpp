@@ -12,6 +12,7 @@
 #include "CommunicationProtocols/uciProtocol.hpp"
 #include "BoardInterface/BoardInterface.hpp"
 #include "Parallel/ThreadBoardInterface.hpp"
+#include "Parallel/ProcessCommunication.hpp"
 #include <cstdio>
 using namespace std;
 bool debugcc = false;
@@ -162,8 +163,18 @@ void debug(string a){
 	std::cout << ndbgline << a << '\n';
 }
 
-int main(){
-	board_interface = new ThreadBoardInterface(true);
-	((ThreadBoardInterface* ) board_interface)->block();
+#ifdef MULTIPROC 
+bool multiproc = true;
+#else
+bool multiproc = false;
+#endif
+
+int main(int argc, char* argv[]){
+	if (multiproc){
+		runProcessCommunicator(argc, argv);
+	} else {
+		board_interface = new ThreadBoardInterface(true);
+		((ThreadBoardInterface* ) board_interface)->block();
+	}
 	return 0;//communaticate();
 }
