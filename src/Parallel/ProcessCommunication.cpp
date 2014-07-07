@@ -113,6 +113,8 @@ void runProcessCommunicator(int argc, char* argv[]){
         MPI_Irecv(&sp_tsk[interrupt_idx ], 1, MPI_CCHAPEIRO_TASK_ID, UI_proc, interrupt_tag , MPI_COMM_WORLD, &sp_req[interrupt_idx]);
         MPI_Irecv(&sp_tsk[bomb_idx      ], 1, MPI_CCHAPEIRO_TASK_ID, UI_proc, bomb_tag      , MPI_COMM_WORLD, &sp_req[bomb_idx     ]);
         MPI_Irecv(&sp_tsk[interrupt2_idx], 1, MPI_CCHAPEIRO_TASK_ID, UI_proc, interrupt2_tag, MPI_COMM_WORLD, &sp_req[interrupt2_idx]);
+    } else {
+        std::cout << "Num of Processes: " << proc_pop << std::endl;
     }
 
     recv_res[search_idx].irecv(&incoming_search, sizeof(incoming_search), MPI_BYTE, MPI_ANY_SOURCE, search_tag, MPI_COMM_WORLD);
