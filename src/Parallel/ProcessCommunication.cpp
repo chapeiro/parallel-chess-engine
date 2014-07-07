@@ -246,6 +246,7 @@ int handleSpecialMessageTasks(){
                 MPI_Irecv(&sp_tsk[interrupt_idx], 1, MPI_CCHAPEIRO_TASK_ID, UI_proc, interrupt_tag, MPI_COMM_WORLD, &sp_req[interrupt_idx]);
                 std::cout << "Process " << std::setw(4) << proc_rank << "of" << proc_pop << " received an interrupt" << std::endl;
                 interruption_requested = true;
+                interrupt_responce_pending = true;
             } else if (ThreadBoardInterface::isPrInterrupt2(sp_tsk[index])){
                 ending_interrupt = true;
                 MPI_Irecv(&sp_tsk[interrupt2_idx], 1, MPI_CCHAPEIRO_TASK_ID, UI_proc, interrupt2_tag, MPI_COMM_WORLD, &sp_req[interrupt2_idx]);
@@ -300,7 +301,7 @@ void makeReceives(){
             }
             default:{
                 std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Invalid TAG!!! (" << index << ")" << std::endl;
-                assert(false);
+                //assert(false);
                 break;
             }
         }
