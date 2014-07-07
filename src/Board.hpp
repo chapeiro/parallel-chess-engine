@@ -229,6 +229,7 @@ class Board { //cache_align
 		int lastHistoryEntry;
 		unsigned int thread_id;
 
+	public:
 		static Board bmem[MAX_BOARDS];
 		static std::mutex bmem_m;
 		static unsigned int bmem_unused[MAX_BOARDS];

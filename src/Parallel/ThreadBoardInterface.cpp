@@ -14,6 +14,14 @@ inline task_id thread_data::createTaskId(unsigned int t) const{
    return t | (thrd_id << thrd_id_offset); 
 }
 
+inline bool thread_data::isFull() const {
+    return !((~used) & thr_task_mask);
+}
+
+inline bool thread_data::isEmpty() const {
+    return !(used & thr_task_mask);
+}
+
 inline unsigned int thread_data::peek_task(){
     unsigned int t = square((~used) & -(~used));
     if (t >= task_pop) return no_task;
@@ -144,7 +152,7 @@ void ThreadBoardInterface::stop(){
     // assert(thr_dt[UI_index].thrd);
     // assert(std::this_thread::get_id() == thr_dt[UI_index].thrd->get_id());
     std::unique_lock<std::mutex> lk(pending_tasks_m);
-    while (idle_threads != thread_pop){ //this may take some time...
+    while (idle_threads != thread_pop || !(thr_dt[MASTER_index].isEmpty())){ //this may take some time...
         interruption_requested = true;
         pending_tasks_cv.wait_for(lk,static_cast<std::chrono::milliseconds>(1));
     }
@@ -216,6 +224,26 @@ bool Task::executeAs(unsigned int thrd_id){
     delete b;
     st = Completed;
     return true;
+}
+
+bool ThreadBoardInterface::isFull(unsigned int thrd_id) const{
+    return thr_dt[thrd_id].isFull();
+}
+
+bool ThreadBoardInterface::isEmpty(unsigned int thrd_id) const{
+    return thr_dt[thrd_id].isEmpty();
+}
+
+unsigned int ThreadBoardInterface::search_rind(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child){
+    task_id t = thr_dt[thrd_id].search(brd, depth, alpha, beta, child);
+    if (t == no_task) return no_task;
+
+    std::unique_lock<std::mutex> lk(pending_tasks_m);
+    // std::cout << std::setw(2) << thrd_id << " set task @" << std::setw(4) << depth << "(" << std::hex << ((void *) brd) << ")" << std::dec<< std::endl;
+    pending_tasks_queue.push(t);
+    lk.unlock();
+    pending_tasks_cv.notify_all();
+    return (t & thr_task_mask);
 }
 
 bool ThreadBoardInterface::search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child){
@@ -321,4 +349,19 @@ void ThreadBoardInterface::increaseDepth(unsigned int thrd_id) {
 
 void ThreadBoardInterface::decreaseDepth(unsigned int thrd_id) {
     thr_dt[thrd_id].decreaseDepth();
+}
+
+task_id ThreadBoardInterface::getCompletedTask(unsigned int thrd_id) const{
+    return thr_dt[MASTER_index].getCompletedTask();
+}
+
+task_id thread_data::getCompletedTask() const{
+    task_bitmask mask  = thr_task_mask & used;
+    while (mask){
+        task_bitmask lsb = mask & -mask;
+        unsigned int t = square(lsb);
+        if (tasks[t].st == Completed) return t;
+        mask ^= lsb;
+    }
+    return no_task;
 }

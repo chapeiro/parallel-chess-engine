@@ -18,7 +18,7 @@
 constexpr unsigned int thread_pop(8);
 constexpr unsigned int UI_index(thread_pop+1);
 constexpr unsigned int MASTER_index(thread_pop);
-constexpr unsigned int task_pop(8); // per thread
+constexpr unsigned int task_pop(16); // per thread
 constexpr unsigned int thrd_id_offset(16);
 constexpr unsigned int thr_task_mask((1 << task_pop) - 1);
 
@@ -39,8 +39,15 @@ enum State{
     Completed
 };
 
+
+void makeSends();
+void makeReceives();
+void runProcessCommunicator(int argc, char* argv[]);
+
 class Task{
     friend class thread_data;
+    friend void makeSends();
+    friend void makeReceives();
     friend void runProcessCommunicator(int argc, char* argv[]);
 private:
     std::atomic<Board*>     board;
@@ -64,6 +71,8 @@ public:
 
 class thread_data{
     friend class ThreadBoardInterface;
+    friend void makeSends();
+    friend void makeReceives();
     friend void runProcessCommunicator(int argc, char* argv[]);
 private:
     std::thread*    thrd;
@@ -74,6 +83,8 @@ private:
     uint64_t        job_id_last;
 
 public:
+    bool isFull() const;
+    bool isEmpty() const;
     thread_data();
     task_id createGoTask(Board *b, int depth, time_control tc);
     int collectNextScore();
@@ -81,6 +92,8 @@ public:
 
     bool collectNextScore(int &score, int depth, internal_move &child);
     bool lazy_execute(task_bitmask mask, int &score, int depth, internal_move &child);
+
+    task_id getCompletedTask() const;
 protected:
     task_id createTaskId(unsigned int t) const;
     unsigned int peek_task();
@@ -112,6 +125,7 @@ public:
     virtual ~ThreadBoardInterface();
 
     virtual bool go(int depth, time_control tc);
+    unsigned int search_rind(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child);
     virtual bool search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child);
     // virtual void perft();
     virtual void stop();
@@ -127,6 +141,11 @@ private:
 
 
 public:
+    bool isFull(unsigned int thrd_id) const;
+    bool isEmpty(unsigned int thrd_id) const;
+
+    task_id getCompletedTask(unsigned int thrd_id) const;
+
     static constexpr task_id createBomb(){
         return (~task_id(0));
     }
@@ -135,8 +154,24 @@ public:
         return (~task_id(2));
     }
 
+    static constexpr task_id createPrInterrupt2(){
+        return (~task_id(3));
+    }
+
+    static constexpr bool isMasters(task_id t){
+        return ((t >> thrd_id_offset) == MASTER_index);
+    }
+
+    bool isGo(task_id t){
+        return ((t >> thrd_id_offset) == MASTER_index);
+    }
+
     static constexpr bool isPrInterrupt(task_id t){
         return (t == createPrInterrupt());
+    }
+
+    static constexpr bool isPrInterrupt2(task_id t){
+        return (t == createPrInterrupt2());
     }
 
     static constexpr bool isBomb(task_id t){

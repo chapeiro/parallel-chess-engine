@@ -46,3 +46,6 @@ Back Up
 
 # ICS Files
 .icsrs
+
+# Gmonitor
+gmon.out
