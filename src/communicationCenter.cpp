@@ -7,12 +7,14 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <cstring>
 #include <string>
 #include "testCChapeiro.hpp"
 #include "CommunicationProtocols/uciProtocol.hpp"
 #include "BoardInterface/BoardInterface.hpp"
 #include "Parallel/ThreadBoardInterface.hpp"
 #include "Parallel/ProcessCommunication.hpp"
+#include "Networking/socket_utils.hpp"
 #include <cstdio>
 using namespace std;
 bool debugcc = false;
@@ -170,11 +172,13 @@ bool multiproc = false;
 #endif
 
 int main(int argc, char* argv[]){
+	dup2sock(argc, argv);
 	if (multiproc){
 		runProcessCommunicator(argc, argv);
 	} else {
 		board_interface = new ThreadBoardInterface(true);
 		((ThreadBoardInterface* ) board_interface)->block();
 	}
+	closeSockets();
 	return 0;//communaticate();
 }

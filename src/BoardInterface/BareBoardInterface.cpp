@@ -51,11 +51,19 @@ bool BareBoardInterface::search(Board * __restrict brd, unsigned int thrd_id, in
     return false;
 }
 
+bool BareBoardInterface::collectNextScoreUB(int &score, unsigned int thrd_id, int depth, internal_move &child){
+    assert(false);
+    return false;
+}
+
 bool BareBoardInterface::collectNextScore(int &score, unsigned int thrd_id, int depth, internal_move &child){
     assert(false);
     return false;
 }
 
+void BareBoardInterface::updateWindows(int alpha, int beta, unsigned int thrd_id){
+    assert(false);
+}
 
 void BareBoardInterface::stop(){
     if (board && searchThread){ //board->stop();

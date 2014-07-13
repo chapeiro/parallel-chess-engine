@@ -131,6 +131,7 @@ int uci(){
 		if (input.find("isready")!=string::npos){
 			if (!initialized) initialized = initializeEngine();
 			cout << "readyok" << endl;
+			cout.flush();
 		} else if (input.find("position")==0){
 			if (!initialized){
 				cerr << "\"isready\" should have been send before \"position\"" << endl;

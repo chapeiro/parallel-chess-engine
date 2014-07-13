@@ -77,5 +77,5 @@ namespace Value{
 
 #define mated(x) ((x) <= (100-Value::MAT))
 #define isMat(x) ((abs(x)) >= (Value::MAT-100))
-constexpr int inf = Value::MAT << 2;
+constexpr int inf = (Value::MAT << 2) - 1;
 #endif /* VALUES_HPP_ */

@@ -15,10 +15,10 @@
 // #include "../BoardInterface/BoardInterface.hpp"
 #include "../BoardInterface/BareBoardInterface.hpp"
 
-constexpr unsigned int thread_pop(2);
+constexpr unsigned int thread_pop(8);
 constexpr unsigned int UI_index(thread_pop+1);
 constexpr unsigned int MASTER_index(thread_pop);
-constexpr unsigned int task_pop(8); // per thread
+constexpr unsigned int task_pop(16); // per thread
 constexpr unsigned int thrd_id_offset(16);
 constexpr unsigned int thr_task_mask((1 << task_pop) - 1);
 
@@ -61,11 +61,12 @@ private:
     std::atomic<State>      st;
     std::mutex              st_m; //lock only to get in Executing or Completed
     uint64_t                job_id;
+    Window                  w;
 
 public:
     Task();
 
-    bool executeAs(unsigned int thrd_id);
+    bool executeAs(unsigned int thrd_id, task_id taskID);
     bool isPending();
 };
 
@@ -91,6 +92,7 @@ public:
     task_id search(Board * __restrict brd, int depth, int alpha, int beta, const internal_move &child);
 
     bool collectNextScore(int &score, int depth, internal_move &child);
+    bool collectNextScoreUB(int &score, int depth, internal_move &child);
     bool lazy_execute(task_bitmask mask, int &score, int depth, internal_move &child);
 
     task_id getCompletedTask() const;
@@ -100,6 +102,7 @@ protected:
     void increaseDepth();
     void decreaseDepth();
     void ui_garbage_collection();
+    void updateWindows(int alpha, int beta);
 };
 
 /**
@@ -132,8 +135,10 @@ public:
     virtual void ui_garbage_collection();
 
     virtual bool collectNextScore(int &score, unsigned int thrd_id, int depth, internal_move &child);
+    virtual bool collectNextScoreUB(int &score, unsigned int thrd_id, int depth, internal_move &child);
     virtual void increaseDepth(unsigned int thrd_id);
     virtual void decreaseDepth(unsigned int thrd_id);
+    virtual void updateWindows(int alpha, int beta, unsigned int thrd_id);
     void block();
 private:
     void run(unsigned int thrd_id);

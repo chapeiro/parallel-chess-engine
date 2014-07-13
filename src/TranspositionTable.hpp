@@ -94,6 +94,7 @@ template<SearchState state> inline int addTTEntry(chapeiro::zobrist zobr, int de
 	newData |= (((U64) score) & tte_mask_score) << tte_shift_score;
 	assert(tte_getDepth(newData) == depth);
 	assert(tte_getKillerMove(newData) == move);
+	if (tte_getScore(newData) != score) std::cout << score << "|" << tte_getScore(newData) << std::endl;
 	assert(tte_getScore(newData) == score || interruption_requested);
 	assert(tte_getSearchState(newData) == state);
 	U64 newZXD = zobr ^ newData;

@@ -9,6 +9,7 @@
 #include "mpi.h"
 #include "../BoardInterface/BoardInterface.hpp"
 #include "ThreadBoardInterface.hpp"
+#include "../Networking/socket_utils.hpp"
 
 constexpr int UI_proc = 0;
 int proc_pop  = 1;
@@ -172,7 +173,6 @@ void interrupt_all(){
         //receive while 
         makeReceives();
         makeSends();
-        //FIXME Send Results
         MPI_Testall(2*(proc_pop-1), reqs, &flag, MPI_STATUSES_IGNORE);
     } while (!flag);
     std::cout << "UI Process - Master Thread sending interrupts completed" << std::endl;
@@ -293,7 +293,8 @@ void makeReceives(){
                 task_id t = result.proc_task_id;
                 Task * tsk = &(tbi->thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask]);
                 assert(tsk->st == Executing);
-                tsk->st = Completed;
+                tsk->score = result.score;
+                tsk->st    = Completed;
                 //End Process Result
                 if (--spawned_searches){
                     // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Opened Receive result Channel" << std::endl;
@@ -327,13 +328,13 @@ void makeSends(){
         if (tbi->idle_threads == 0 && !tbi->pending_tasks_queue.empty()){ //
             task_id t = tbi->pending_tasks_queue.front();
             Task * tsk = &(tbi->thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask]);
-            if (!(ThreadBoardInterface::isBomb(t) || ThreadBoardInterface::isMasters(t) || (tsk->type == IterativeDeepening))){
+            if (false && !(ThreadBoardInterface::isBomb(t) || ThreadBoardInterface::isMasters(t) || (tsk->type == IterativeDeepening))){
                 tbi->pending_tasks_queue.pop();
                 lk.unlock();
                 State t2 = Pending;
                 if (tsk->st.compare_exchange_strong(t2, Executing)){
                     Board *brd                   = tsk->board.exchange(NULL);
-                    outgoing_search.b            = *brd;
+                    memcpy(&(outgoing_search.b), brd, sizeof(Board));
                     outgoing_search.depth        = tsk->depth;
                     outgoing_search.alpha        = tsk->alpha;
                     outgoing_search.beta         = tsk->beta ;

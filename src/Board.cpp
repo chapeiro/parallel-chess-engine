@@ -53,6 +53,7 @@ Board::Board(Board * __restrict b){
 	enPassant = b->enPassant;
 	halfmoves = b->halfmoves;
 	fullmoves = b->fullmoves;
+	stats.reset();
 	//Memory
 	memcpy(history, b->history, sizeof(history));
 }
@@ -614,7 +615,8 @@ void Board::go(int maxDepth, time_control tc){
 		std::cout << " depth " << depth;
 		std::cout << " time " << etime.count();
 		std::cout << " nodes " << (gstats.nodes+stats.nodes)-stNodes;
-		if (etime.count() >= 1000) std::cout << " nps " << (U64) ((((gstats.nodes+stats.nodes)-stNodes)*1000ull) / (etime / 1000.0).count());
+		std::chrono::seconds secs(std::chrono::duration_cast<std::chrono::seconds>(etime));
+		if (secs.count() > 0) std::cout << " nps " << (U64) (((gstats.nodes+stats.nodes)-stNodes) / secs.count());
 
 		Board * extrPv = new Board(this);
 		std::cout << " pv " << extrPv->extractPV(depth);
@@ -783,11 +785,11 @@ time_duration get_zero_time(){
 int Board::search(int depth, int alpha, int beta) __restrict{
 	int score;
 	if (playing == white){
-		score = -search<ZW, white, false>(-1-alpha, -alpha, depth - 1);
-		if ( score > alpha ) score = -search<PV, white, false>(-beta, -alpha, depth - 1);
+		score = -search<ZW, white, true>(-1-alpha, -alpha, depth - 1);
+		if ( score > alpha ) score = -search<PV, white, true>(-beta, -alpha, depth - 1);
 	} else {
-		score = -search<ZW, black, false>(-1-alpha, -alpha, depth - 1);
-		if ( score > alpha ) score = -search<PV, black, false>(-beta, -alpha, depth - 1);
+		score = -search<ZW, black, true>(-1-alpha, -alpha, depth - 1);
+		if ( score > alpha ) score = -search<PV, black, true>(-beta, -alpha, depth - 1);
 	}
 	return score;
 }
@@ -798,6 +800,10 @@ int Board::searchT(int depth, int alpha, int beta) __restrict{
 
 void Board::setThreadID(unsigned int thrd_id){
 	this->thread_id = thrd_id;
+}
+
+void Board::setWindow(Window * w){
+	this->w = w;
 }
 
 

@@ -33,8 +33,10 @@ class BoardInterface{
         virtual bool go(int depth, time_control tc)                         = 0;
         virtual bool search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child)   = 0;
         virtual bool collectNextScore(int &score, unsigned int thrd_id, int depth, internal_move &child)                                = 0;
+        virtual bool collectNextScoreUB(int &score, unsigned int thrd_id, int depth, internal_move &child)            = 0;
         virtual void increaseDepth(unsigned int thrd_id) {}
         virtual void decreaseDepth(unsigned int thrd_id) {}
+        virtual void updateWindows(int alpha, int beta, unsigned int thrd_id) {}
         // virtual void perft()                                = 0;
         virtual void stop()                                 = 0;
 };

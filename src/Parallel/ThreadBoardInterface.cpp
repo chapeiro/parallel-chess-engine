@@ -32,7 +32,9 @@ inline unsigned int thread_data::peek_task(){
 task_id thread_data::createGoTask(Board *b, int depth, time_control tc){
     unsigned int t  = peek_task();
     if (t == no_task) return no_task;
-    tasks[t].board  = new Board(b);
+    Board *b2 = new Board(b);
+    tasks[t].board  = b2;
+    b2->toWindow(-inf, +inf, tasks[t].w);
     tasks[t].type   = TaskType::IterativeDeepening;
     tasks[t].tc     = tc;
     tasks[t].depth  = depth;
@@ -42,9 +44,12 @@ task_id thread_data::createGoTask(Board *b, int depth, time_control tc){
 }
 
 task_id thread_data::search(Board * __restrict brd, int depth, int alpha, int beta, const internal_move &child){
+#ifndef SIMULATE_SINGLETHREAD
     unsigned int t  = peek_task();
     if (t == no_task) return no_task;
-    tasks[t].board  = new Board(brd);
+    Board *b = new Board(brd);
+    b->toWindow(-beta, -alpha, tasks[t].w);
+    tasks[t].board  = b;
     tasks[t].type   = TaskType::PVS;
     tasks[t].depth  = depth;
     tasks[t].alpha  = alpha;
@@ -53,6 +58,9 @@ task_id thread_data::search(Board * __restrict brd, int depth, int alpha, int be
     tasks[t].job_id = job_id;
     tasks[t].st     = Pending;
     return createTaskId(t);
+#else
+    return no_task;
+#endif
 }
 // BoardInterface overwrite
 
@@ -191,7 +199,7 @@ void ThreadBoardInterface::run(unsigned int id){
 void ThreadBoardInterface::execute(task_id t, unsigned int id){
     assert((t >> thrd_id_offset) != id);
     thr_dt[id].increaseDepth();
-    thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask].executeAs(id);
+    thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask].executeAs(id, t & thr_task_mask);
     thr_dt[id].decreaseDepth();
 }
 
@@ -201,7 +209,7 @@ bool Task::isPending(){
     return (st == Pending);
 }
 
-bool Task::executeAs(unsigned int thrd_id){
+bool Task::executeAs(unsigned int thrd_id, task_id taskID){
     // std::lock_guard<std::mutex> lk(st_m);
    State t = Pending;
     if (!st.compare_exchange_strong(t, Executing)) return false;
@@ -209,6 +217,7 @@ bool Task::executeAs(unsigned int thrd_id){
     Board * b = board.exchange(NULL);
     assert(b);
     b->setThreadID(thrd_id);
+    b->setWindow(&w);
     // std::cout << std::setw(2) << thrd_id << " got task @" << std::setw(4) << depth << "(" << std::hex << ((void *) b) << ")" << std::dec<< std::endl;
     switch (type){
         case IterativeDeepening: //no result, clean it...
@@ -262,6 +271,42 @@ bool ThreadBoardInterface::collectNextScore(int &score, unsigned int thrd_id, in
     return (thr_dt[thrd_id].collectNextScore(score, depth, child));
 }
 
+bool ThreadBoardInterface::collectNextScoreUB(int &score, unsigned int thrd_id, int depth, internal_move &child){
+    return (thr_dt[thrd_id].collectNextScoreUB(score, depth, child));
+}
+
+void ThreadBoardInterface::updateWindows(int alpha, int beta, unsigned int thrd_id){
+    return (thr_dt[thrd_id].updateWindows(alpha, beta));
+}
+
+void thread_data::updateWindows(int alpha, int beta){
+    task_bitmask mask  = thr_task_mask & used;
+    while (mask){
+        unsigned int t = square(pop_lsb(mask));
+        if (tasks[t].job_id == job_id && (tasks[t].st == Executing || tasks[t].st == Pending)){
+            tasks[t].w.alpha = alpha;
+            tasks[t].w.beta  = beta ;
+        }
+    }
+}
+
+bool thread_data::collectNextScoreUB(int &score, int depth, internal_move &child){
+    task_bitmask mask  = thr_task_mask & used;
+    while (mask){
+        unsigned int t = square(pop_lsb(mask));
+        if (tasks[t].job_id == job_id && tasks[t].st == Completed){
+            assert(tasks[t].depth == depth);
+            score = tasks[t].score;
+            child = tasks[t].move;
+            tasks[t].st = Invalid;
+            used ^= 1 << t;
+            assert(!(used & (1 << t)));
+            return true;
+        }
+    }
+    return false;
+}
+
 bool thread_data::collectNextScore(int &score, int depth, internal_move &child){
     task_bitmask mask  = thr_task_mask & used;
     task_bitmask mask2 = thr_task_mask & used;
@@ -296,7 +341,7 @@ bool thread_data::lazy_execute(task_bitmask mask, int &score, int depth, interna
             increaseDepth();
             assert((used & (1 << i)));
             assert(tasks[i].st != Invalid);
-            if(tasks[i].executeAs(thrd_id)){
+            if(tasks[i].executeAs(thrd_id, i)){
                 assert(tasks[i].depth == depth);
                 score = tasks[i].score;
                 child = tasks[i].move;
@@ -358,10 +403,9 @@ task_id ThreadBoardInterface::getCompletedTask(unsigned int thrd_id) const{
 task_id thread_data::getCompletedTask() const{
     task_bitmask mask  = thr_task_mask & used;
     while (mask){
-        task_bitmask lsb = mask & -mask;
+        task_bitmask lsb = pop_lsb(mask);
         unsigned int t = square(lsb);
         if (tasks[t].st == Completed) return t;
-        mask ^= lsb;
     }
     return no_task;
 }

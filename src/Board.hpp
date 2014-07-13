@@ -181,6 +181,31 @@ struct internal_move{
 		inline void set(bitboard tf) __restrict;
 };
 
+struct Window{
+	std::atomic<int> alpha;
+	std::atomic<int> beta ;
+
+	template<color plr> inline int getBeta() const{
+		if (plr == white) return beta;
+		return -alpha;
+	}
+
+	template<color plr> inline int getAlpha() const{
+		if (plr == white) return alpha;
+		return beta;
+	}
+
+	template<color plr> inline void setBeta(int nbeta){
+		if (plr == white) beta  =  nbeta;
+		else              alpha = -nbeta;
+	}
+
+	template<color plr> inline void getAlpha(int nalpha){
+		if (plr == white) alpha =  nalpha;
+		else              beta  = -nalpha;
+	}
+};
+
 class Task;
 
 struct node_statistics{
@@ -228,6 +253,7 @@ class Board { //cache_align
 		Zobrist history[256];
 		int lastHistoryEntry;
 		unsigned int thread_id;
+		Window *w;
 
 	public:
 		static Board bmem[MAX_BOARDS];
@@ -237,6 +263,8 @@ class Board { //cache_align
 
 		//for Perft
 		node_statistics stats;
+
+		typedef Zobrist hash_t;
 
 	public:
 		int dividedepth;
@@ -270,6 +298,8 @@ class Board { //cache_align
 		//for debug
 		std::string getFEN() __restrict;
 		std::string getFEN(int playingl) __restrict;
+		inline hash_t hash() const;
+		void toWindow(int alpha, int beta, Window &w);
 		void print();
 		void printHistory();
 		U64 perft(int depth);
@@ -311,6 +341,7 @@ class Board { //cache_align
 		int search(int depth, int alpha, int beta) __restrict;
 		int searchT(int depth, int alpha, int beta) __restrict;
 		void setThreadID(unsigned int thrd_id);
+		void setWindow(Window *w);
 	private:
 		std::string extractPV(int depth);
 
@@ -385,9 +416,24 @@ template<color plr> inline void Board::deactivateCastlingRights() __restrict{
 	zobr ^= zobrist::castling[((castling^oldc)*castlingsmagic)>>60];
 }
 
+inline void Board::toWindow(int alpha, int beta, Window &w){
+	if (playing == white){
+		w.alpha = alpha;
+		w.beta  = beta;
+	} else {
+		w.alpha = -beta;
+		w.beta  = -alpha;
+	}
+}
+
 inline void Board::togglePlaying() __restrict{
 	playing ^= 1;
 	zobr ^= zobrist::blackKey;
+}
+
+
+inline Board::hash_t Board::hash() const{
+	return zobr;
 }
 
 template<color plr> bitboard Board::kingIsAttackedBy(bitboard occ, int kingSq) __restrict{
@@ -511,6 +557,28 @@ template<SearchMode mode, color plr, bool root, class UnaryPredicate, class Unar
 inline __attribute__((always_inline)) bool Board::deeper(const internal_move &child, int oldhm, bitboard old_enpassant, search_state &sst, const UnaryPredicate &toggleMove, int scoreD, const UnaryPredicate2 &toggleGroupMove, int scoreGD) __restrict{
 	pieceScore += scoreD;
 	toggleMove();
+#ifndef SIMULATE_SINGLETHREAD
+	if (mode == PV){
+		bool c = false;
+		int wbeta  = w->getBeta<plr>();
+		int walpha = w->getAlpha<plr>();
+		if (sst.beta > wbeta) {
+			sst.beta  = wbeta ; //= std::min(w->getBeta<plr>() );
+			c = true;
+		}
+		// if (sst.alpha < walpha) {
+		// 	sst.alpha = walpha; //= std::max(w->getAlpha<plr>());
+		// 	c = true;
+		// }
+		if (c){
+			if (plr == white){
+				board_interface->updateWindows( sst.alpha,  sst.beta , thread_id);
+			} else {
+				board_interface->updateWindows(-sst.beta , -sst.alpha, thread_id);
+			}
+		}
+	}
+#endif
 	playing = !plr;
 	zobr   ^= zobrist::blackKey;
 	searchDeeper<mode, !plr>(sst.alpha, sst.beta, sst.depth, sst.pvFound, sst.score, child);
@@ -519,7 +587,20 @@ inline __attribute__((always_inline)) bool Board::deeper(const internal_move &ch
 	toggleMove();
 	pieceScore -= scoreD;
 
-	if( sst.score >= sst.beta ) {
+	int loc_beta = sst.beta;
+#ifndef SIMULATE_SINGLETHREAD
+	if (mode == PV){
+		// if (sst.beta <  w->getBeta<plr>()){
+		// 	std::cout << sst.beta << std::endl;
+		// 	std::cout << w->getBeta<plr>() << std::endl;
+		// 	std::cout << sst.alpha << std::endl;
+		// 	std::cout << w->getAlpha<plr>() << std::endl;
+		// }
+		// assert(sst.beta >=  w->getBeta<plr>()); //window may only shrink
+		loc_beta = std::min(loc_beta, w->getBeta<plr>());
+	}
+#endif
+	if( sst.score >= loc_beta){
 		pieceScore += scoreGD;
 		toggleGroupMove();
 
@@ -531,25 +612,99 @@ inline __attribute__((always_inline)) bool Board::deeper(const internal_move &ch
 		enPassant = old_enpassant;
 		if (old_enpassant) zobr ^= zobrist::enPassant[7 & square(old_enpassant)];
 		if (plr == black) --fullmoves;
-
-		addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, sst.depth, getMove<plr>(child.tf, child.prom), sst.beta);
+		addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, sst.depth, getMove<plr>(child.tf, child.prom), sst.score);
 		statistics(++betaCutOff);
 		// prepare_beta_cutoff<mode, plr, root>(oldhm, old_enpassant, child, sst.depth, sst.beta);
-		sst.score = sst.beta;		// fail-hard beta-cutoff
+
+		sst.score = loc_beta; // fail-hard beta-cutoff
+
 		assert_state();
+#ifndef SIMULATE_SINGLETHREAD 
+		if (mode == PV){
+			if (sst.pvFound){
+				if (plr == white){
+					board_interface->updateWindows( sst.score,  sst.score, thread_id);
+				} else {
+					board_interface->updateWindows(-sst.score, -sst.score, thread_id);
+				}
+			}
+		}
 
 		{
 			int g1;
 			internal_move g2(0, 0);
 			while (board_interface->collectNextScore(g1, thread_id, sst.depth, g2));
 		}
+#endif
 		return true;
 	}
-	sst.pvFound = true;
 	if( ( mode == PV || mode >= quiescenceMask ) && sst.score > sst.alpha ){
+#ifndef SIMULATE_SINGLETHREAD
+		if (mode == PV){
+			if (sst.pvFound){
+				if (plr == white){
+					board_interface->updateWindows(sst.score,   sst.beta, thread_id);
+				} else {
+					board_interface->updateWindows(-sst.beta, -sst.score, thread_id);
+				}
+			}
+		}
+#endif
 		sst.alpha = sst.score;		//Better move found!
 		sst.bmove = child;
 	}
+#ifndef SIMULATE_SINGLETHREAD
+	if (mode == PV && sst.pvFound){
+		bool beta_cutoff = false;
+		int beta_cutoff_move = 0;
+		int col_score;
+		internal_move child(0, 0);
+		while (board_interface->collectNextScoreUB(col_score, thread_id, sst.depth, child)){
+			if( col_score >= loc_beta ) {
+				loc_beta = col_score;
+				if (!beta_cutoff) {
+					if (plr == white){
+						board_interface->updateWindows( loc_beta,  loc_beta, thread_id);
+					} else {
+						board_interface->updateWindows(-loc_beta, -loc_beta, thread_id);
+					}
+				}
+				beta_cutoff_move = getMove<plr>(child.tf, child.prom);
+				beta_cutoff = true;
+			}
+			sst.pvFound = true;
+			if( ( mode == PV || mode >= quiescenceMask ) && col_score > sst.alpha){
+				if (plr == white){
+					board_interface->updateWindows(col_score,   loc_beta, thread_id);
+				} else {
+					board_interface->updateWindows(-loc_beta, -col_score, thread_id);
+				}
+				sst.alpha = col_score;		//Better move found!
+				sst.bmove = child;
+				// if (root) std::cout << "Lmove_" << std::hex << child.tf << std::dec << std::endl;
+			}
+		}
+
+		if (beta_cutoff){
+			halfmoves = oldhm;
+			
+			enPassant = old_enpassant;
+			if (old_enpassant) zobr ^= zobrist::enPassant[7 & square(old_enpassant)];
+			if (plr == black) --fullmoves;
+			addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, sst.depth, getMove<plr>(child.tf, child.prom), sst.score);
+			statistics(++betaCutOff);
+			//assert_state();
+
+			{
+				int g1;
+				internal_move g2(0, 0);
+				while (board_interface->collectNextScore(g1, thread_id, sst.depth, g2));
+			}
+			return true;
+		}
+	}
+#endif
+	sst.pvFound = true;
 	return false;
 };
 
@@ -594,26 +749,28 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		//return search<QuiescencePV, plr>(alpha, beta, depth);
 		return search<(SearchMode) (mode | quiescenceMask), plr, false>(mode==ZW?beta-1:alpha, beta, depth);
 	}
+	search_state sst(alpha, beta, depth);
 #ifndef NO_TRANSPOSITION_TABLE
 	//FIXME fix
-	search_state sst(alpha, beta, depth);
 	int killerMove = retrieveTTEntry<mode>(zobr, sst.depth, sst.alpha, sst.beta);
 	//if (ttResult == ttExactScoreReturned) return alpha;
 	if (sst.alpha >= sst.beta) {
 		statistics(++hashHitCutOff);
 		return sst.alpha;
 	}
+#else 
+	int killerMove = 0;
 #endif
 	//move state forward (halfmoves (oldhm), fullmoves (fullmoves+{0, 1}(plr)), enPassant (tmpEnPassant)
 	int oldhm (halfmoves);
 
-	if (root) {
-		std::cout << "hereD";
-		int index = getTTIndex(zobr);
-		ttEntry * entry = transpositionTable + index;
-		U64 data = entry->data;
-		std::cout << std::hex << data << std::dec << std::endl;
-	}
+	// if (root) {
+	// 	std::cout << "hereD";
+	// 	int index = getTTIndex(zobr);
+	// 	ttEntry * entry = transpositionTable + index;
+	// 	U64 data = entry->data;
+	// 	std::cout << std::hex << data << std::dec << std::endl;
+	// }
 
 	if (enPassant) zobr ^= zobrist::enPassant[7 & square(enPassant)];
 	bitboard tmpEnPassant (enPassant);
@@ -2168,37 +2325,53 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		}
 	}
 	{
-		bool beta_cutoff = false;
-		int beta_cutoff_move = 0;
-		int loc_beta = sst.beta;
-		int col_score;
-		internal_move child(0, 0);
-		while (board_interface->collectNextScore(col_score, thread_id, depth, child)){
-			if( col_score >= loc_beta ) {
-				loc_beta = col_score;
-				beta_cutoff_move = getMove<plr>(child.tf, child.prom);
-				beta_cutoff = true;
+#ifndef SIMULATE_SINGLETHREAD
+		if (mode == PV){
+			bool beta_cutoff = false;
+			int beta_cutoff_move = 0;
+			int loc_beta = sst.beta;
+			int col_score;
+			internal_move child(0, 0);
+			while (board_interface->collectNextScore(col_score, thread_id, depth, child)){
+				if( col_score >= loc_beta ) {
+					loc_beta = col_score;
+					if (!beta_cutoff) {
+						if (plr == white){
+							board_interface->updateWindows( loc_beta,  loc_beta, thread_id);
+						} else {
+							board_interface->updateWindows(-loc_beta, -loc_beta, thread_id);
+						}
+					}
+					beta_cutoff_move = getMove<plr>(child.tf, child.prom);
+					beta_cutoff = true;
+				}
+				sst.pvFound = true;
+				if( ( mode == PV || mode >= quiescenceMask ) && col_score > sst.alpha){
+					if (plr == white){
+						board_interface->updateWindows(col_score,   loc_beta, thread_id);
+					} else {
+						board_interface->updateWindows(-loc_beta, -col_score, thread_id);
+					}
+					sst.alpha = col_score;		//Better move found!
+					sst.bmove = child;
+					// if (root) std::cout << "Lmove_" << std::hex << child.tf << std::dec << std::endl;
+				}
 			}
-			sst.pvFound = true;
-			if( ( mode == PV || mode >= quiescenceMask ) && col_score > sst.alpha){
-				sst.alpha = col_score;		//Better move found!
-				sst.bmove = child;
-				if (root) std::cout << "Lmove_" << std::hex << child.tf << std::dec << std::endl;
+
+			if (beta_cutoff){
+				halfmoves = oldhm;
+
+				enPassant = tmpEnPassant;
+				if (tmpEnPassant) zobr ^= zobrist::enPassant[7 & square(tmpEnPassant)];
+				if (plr == black) --fullmoves;
+
+				addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, sst.depth, beta_cutoff_move, sst.beta);
+				statistics(++betaCutOff); 											// fail-hard beta-cutoff
+				assert_state();
+				return sst.beta;
 			}
 		}
-
-		if (beta_cutoff){
-			halfmoves = oldhm;
-
-			enPassant = tmpEnPassant;
-			if (tmpEnPassant) zobr ^= zobrist::enPassant[7 & square(tmpEnPassant)];
-			if (plr == black) --fullmoves;
-
-			addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, sst.depth, beta_cutoff_move, sst.beta);
-			statistics(++betaCutOff); 											// fail-hard beta-cutoff
-			assert_state();
-			return sst.beta;
-		}
+#endif
 	}
 
 	halfmoves = oldhm;
@@ -2243,7 +2416,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 #endif
 	if (mode == Perft) return sst.alpha + 1;
 	if (mode < quiescenceMask){
-		if (root) std::cout << "hereC" << std::endl;
+		// if (root) std::cout << "hereC" << std::endl;
 		if (stNodes == stats.nodes){
 			if (checkedBy == bitboard(0)) {
 				sst.alpha = 0;									//PAT
@@ -2256,12 +2429,12 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			assert(sst.bmove.tf != bitboard(0));
 			addTTEntry<AlphaCutoff>(zobr, sst.depth, getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
 		} else {
-			if (root) std::cout << "hereB" << std::endl;
-			if (root) std::cout << std::hex << sst.bmove.tf << std::dec << std::endl;
-			// assert(sst.bmove.tf == bitboard(0));//ExactScore
-			if (root) std::cout << std::hex << addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha) << std::dec << std::endl;
-			else addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
-			
+			// if (root) std::cout << "hereB" << std::endl;
+			// if (root) std::cout << std::hex << sst.bmove.tf << std::dec << std::endl;
+			// // assert(sst.bmove.tf == bitboard(0));//ExactScore
+			// if (root) std::cout << std::hex << addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha) << std::dec << std::endl;
+			// else 
+			addTTEntry<mode == ZW ? AlphaCutoff : ExactScore>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
 		}
 	} else {
 		addTTEntry<QSearchAlphaCutoff>(zobr, sst.depth, (sst.bmove.tf == bitboard(0)) ? killerMove : getMove<plr>(sst.bmove.tf, sst.bmove.prom), sst.alpha);
