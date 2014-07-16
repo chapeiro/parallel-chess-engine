@@ -630,7 +630,7 @@ void Board::go(int maxDepth, time_control tc){
 			matdcycles = 0;
 			std::cout << " score cp " << score;
 		}
-		std::cout << " hashfull " << (1000*ttUsed/TRANSPOSITION_TABLE_SIZE);
+		std::cout << " hashfull " << (UINT64_C(1000)*ttUsed/UINT64_C(TRANSPOSITION_TABLE_SIZE));
 		delete extrPv;
 		std::cout << std::endl;
 		std::cout.flush();

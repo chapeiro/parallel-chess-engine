@@ -43,7 +43,7 @@ struct ttEntry{
 #define ttExactScoreReturned (-1)
 
 extern ttEntry transpositionTable[TRANSPOSITION_TABLE_SIZE];
-extern unsigned int ttUsed;
+extern U64 ttUsed;
 statistics(extern U64 ttmisses);
 statistics(extern U64 ttaccesses);
 statistics(extern U64 hashHitCutOff);

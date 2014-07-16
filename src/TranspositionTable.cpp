@@ -9,7 +9,7 @@
 #include <iostream>
 
 ttEntry transpositionTable[TRANSPOSITION_TABLE_SIZE];
-unsigned int ttUsed = 0;
+U64 ttUsed = 0;
 statistics(U64 ttmisses = 0);
 statistics(U64 ttaccesses = 0);
 statistics(U64 hashHitCutOff = 0);
