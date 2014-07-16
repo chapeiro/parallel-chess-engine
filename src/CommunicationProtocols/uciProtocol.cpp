@@ -119,7 +119,11 @@ std::pair<int, time_control> getTimeControl(string t){
 }
 
 int uci(){
-	cout << "id name Chapeiro" << endl;
+	cout << "id name Multipeiro";
+#ifdef MULTIPROC
+	cout << "_mpi";
+#endif
+	cout << endl;
 	cout << "id author Chrysogelos Periklis" << endl;
 	//cout << "option name Hash type spin default 1 min 1 max 512" << endl;
 	cout << "uciok" << endl;

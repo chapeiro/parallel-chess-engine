@@ -8,7 +8,7 @@
 #ifndef PROCESSCOMMUNICATION_HPP_
 #define PROCESSCOMMUNICATION_HPP_
 
-void runProcessCommunicator(int argc, char* argv[]);
+bool runProcessCommunicator(int argc, char* argv[]);
 
 void interrupt_all();
 

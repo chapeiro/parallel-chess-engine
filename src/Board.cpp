@@ -646,78 +646,79 @@ void Board::go(int maxDepth, time_control tc){
 	}
 }
 
-int rootDepth = 0;
+// int rootDepth = 0;
 
-void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
-	time_td startTime = get_current_time();
-	interruption_requested = false;
-	if (movesUntilTimeControl == NO_NEXT_TIME_CONTROL) movesUntilTimeControl = 40;
-	U64 timeToSearch = ((playing == white) ? wTime : bTime) / (movesUntilTimeControl);
-	time_td searchEndTime = startTime + milli_to_time(timeToSearch < searchForXMsec ? timeToSearch : searchForXMsec);
-	time_duration elapsedTime = get_zero_time();
-	time_td currentTime;
-	int depth = (STARTING_DEPTH < maxDepth) ? STARTING_DEPTH : 1; //STARTING_DEPTH
-	int alpha = -inf;
-	int beta = inf;
-	int move = 0;
-	int score = 0;
-	int matdcycles = 0;
-	U64 stNodes = gstats.nodes;
-	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
-	Board * extrPv = NULL;
-	while (depth <= maxDepth && (infinitiveSearch || ((searchEndTime - get_current_time()) > elapsedTime*ELAPSED_TIME_FACTOR)) && matdcycles < 3){
-		rootDepth = depth;
-		if (playing == white){
-			score = search<PV, white, true>(alpha, beta, depth);
-		} else {
-			score = search<PV, black, true>(alpha, beta, depth);
-		}
-		elapsedTime = get_current_time() - startTime;
-		if (interruption_requested) {
-			ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
-			break; //DO NOT USE THE SCORE RETURNED BY SEARCH!!! IT IS NOT VALID!!!
-		}
-		move = getBestMove(zobr);
-		//Sending Infos
-		std::cout << "info";
-		std::cout << " depth " << depth;
-#if defined _MSC_VER && _MSC_VER <= 1600
-		std::cout << " time " << elapsedTime.total_milliseconds();
-#else
-		std::cout << " time " << (elapsedTime.count()/1000);
-#endif
-		std::cout << " nodes " << gstats.nodes-stNodes;
-#if defined _MSC_VER && _MSC_VER <= 1600
-		if (elapsedTime.total_milliseconds() != 0ull) std::cout << " nps " << ((gstats.nodes-stNodes)*1000ull) / (elapsedTime.total_milliseconds());
-#else
-		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((gstats.nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000.0);
-#endif
-		extrPv = new Board(this);
-		std::cout << " pv " << extrPv->extractPV(depth);
-		if (isMat(score)) {
-			std::cout << " score mate ";
-			if (score < 0) std::cout << '-';
-			int matmoves = ((Value::MAT - abs(score) - 1)/2) + 1;
-			std::cout << matmoves;
-			++matdcycles;
-		} else {
-			matdcycles = 0;
-			std::cout << " score cp " << score;
-		}
-		std::cout << " hashfull " << (1000*ttUsed/TRANSPOSITION_TABLE_SIZE);
-		delete extrPv;
-		std::cout << std::endl;
-		if (debugcc) std::cerr << ndbgline << "Score : " << score << std::endl;
-		++depth;
-	}
-	if (move != 0){
-		char m[6];
-		std::cout << "bestmove " << moveToString(move, m) << std::endl;
-		if (depth > maxDepth) std::cerr << ndbgline << "Maximum Depth reached!" << std::endl;
-	} else {
-		std::cerr << ndbgline << "Move not found in hashtable !!!" << std::endl;
-	}
-}
+// void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
+// 	time_td startTime = get_current_time();
+// 	interruption_requested = false;
+// 	if (movesUntilTimeControl == NO_NEXT_TIME_CONTROL) movesUntilTimeControl = 40;
+// 	U64 timeToSearch = ((playing == white) ? wTime : bTime) / (movesUntilTimeControl);
+// 	time_td searchEndTime = startTime + milli_to_time(timeToSearch < searchForXMsec ? timeToSearch : searchForXMsec);
+// 	time_duration elapsedTime = get_zero_time();
+// 	time_td currentTime;
+// 	int depth = (STARTING_DEPTH < maxDepth) ? STARTING_DEPTH : 1; //STARTING_DEPTH
+// 	int alpha = -inf;
+// 	int beta = inf;
+// 	int move = 0;
+// 	int score = 0;
+// 	int matdcycles = 0;
+// 	U64 stNodes = gstats.nodes;
+// 	if (debugcc) std::cerr << ndbgline << "0x" << std::hex << std::setw(16) << zobr << std::dec << std::endl;
+// 	Board * extrPv = NULL;
+// 	while (depth <= maxDepth && (infinitiveSearch || ((searchEndTime - get_current_time()) > elapsedTime*ELAPSED_TIME_FACTOR)) && matdcycles < 3){
+// 		rootDepth = depth;
+// 		if (playing == white){
+// 			score = search<PV, white, true>(alpha, beta, depth);
+// 		} else {
+// 			score = search<PV, black, true>(alpha, beta, depth);
+// 		}
+// 		elapsedTime = get_current_time() - startTime;
+// 		if (interruption_requested) {
+// 			ttNewGame(); //FIXME if this is not used TT will have invalid entries!!! But this is bad for later searches in the same game!
+// 			break; //DO NOT USE THE SCORE RETURNED BY SEARCH!!! IT IS NOT VALID!!!
+// 		}
+// 		move = getBestMove(zobr);
+// 		//Sending Infos
+// 		std::cout << "info";
+// 		std::cout << " depth " << depth;
+// #if defined _MSC_VER && _MSC_VER <= 1600
+// 		std::cout << " time " << elapsedTime.total_milliseconds();
+// #else
+// 		std::cout << " time " << (elapsedTime.count()/1000);
+// #endif
+// 		std::cout << " nodes " << gstats.nodes-stNodes;
+// #if defined _MSC_VER && _MSC_VER <= 1600
+// 		if (elapsedTime.total_milliseconds() != 0ull) std::cout << " nps " << ((gstats.nodes-stNodes)*1000ull) / (elapsedTime.total_milliseconds());
+// #else
+// 		if (elapsedTime.count() >= 1000) std::cout << " nps " << ((gstats.nodes-stNodes)*1000ull) / (elapsedTime.count() / 1000.0);
+// #endif
+// 		extrPv = new Board(this);
+// 		std::cout << " pv " << extrPv->extractPV(depth);
+// 		if (isMat(score)) {
+// 			std::cout << " score mate ";
+// 			if (score < 0) std::cout << '-';
+// 			int matmoves = ((Value::MAT - abs(score) - 1)/2) + 1;
+// 			std::cout << matmoves;
+// 			++matdcycles;
+// 		} else {
+// 			matdcycles = 0;
+// 			std::cout << " score cp " << score;
+// 		}
+// 		std::cout << " hashfull " << (1000*ttUsed/TRANSPOSITION_TABLE_SIZE);
+// 		delete extrPv;
+// 		std::cout << std::endl;
+// 		std::cout << bmem_unused_last << std::endl;
+// 		if (debugcc) std::cerr << ndbgline << "Score : " << score << std::endl;
+// 		++depth;
+// 	}
+// 	if (move != 0){
+// 		char m[6];
+// 		std::cout << "bestmove " << moveToString(move, m) << std::endl;
+// 		if (depth > maxDepth) std::cerr << ndbgline << "Maximum Depth reached!" << std::endl;
+// 	} else {
+// 		std::cerr << ndbgline << "Move not found in hashtable !!!" << std::endl;
+// 	}
+// }
 
 
 std::string Board::extractPV(int depth){

@@ -335,7 +335,7 @@ class Board { //cache_align
 		int evaluatePawnStructure() __restrict;
 		template<color plr> void deactivateCastlingRights() __restrict;
 		void togglePlaying() __restrict;
-		void startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
+		// void startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch);
 	public:
 		void go(int maxDepth, time_control tc);
 		int search(int depth, int alpha, int beta) __restrict;
@@ -561,7 +561,7 @@ inline __attribute__((always_inline)) bool Board::deeper(const internal_move &ch
 	if (mode == PV){
 		bool c = false;
 		int wbeta  = w->getBeta<plr>();
-		int walpha = w->getAlpha<plr>();
+		// int walpha = w->getAlpha<plr>();
 		if (sst.beta > wbeta) {
 			sst.beta  = wbeta ; //= std::min(w->getBeta<plr>() );
 			c = true;
@@ -600,7 +600,7 @@ inline __attribute__((always_inline)) bool Board::deeper(const internal_move &ch
 		loc_beta = std::min(loc_beta, w->getBeta<plr>());
 	}
 #endif
-	if( sst.score >= loc_beta){
+	if( sst.score >= loc_beta || interruption_requested){
 		pieceScore += scoreGD;
 		toggleGroupMove();
 
@@ -691,7 +691,7 @@ inline __attribute__((always_inline)) bool Board::deeper(const internal_move &ch
 			enPassant = old_enpassant;
 			if (old_enpassant) zobr ^= zobrist::enPassant[7 & square(old_enpassant)];
 			if (plr == black) --fullmoves;
-			addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, sst.depth, getMove<plr>(child.tf, child.prom), sst.score);
+			addTTEntry<(mode < quiescenceMask) ? BetaCutoff : QSearchBetaCutoff>(zobr, sst.depth, beta_cutoff_move, sst.score);
 			statistics(++betaCutOff);
 			//assert_state();
 

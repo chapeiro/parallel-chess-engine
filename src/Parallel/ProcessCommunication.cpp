@@ -5,6 +5,7 @@
  *      Author: Chrysogelos Periklis
  */
 
+#include <algorithm>
 #include "ProcessCommunication.hpp"
 #include "mpi.h"
 #include "../BoardInterface/BoardInterface.hpp"
@@ -33,7 +34,7 @@ struct search_message{
 bool outgoing_result_pending = false;
 bool outgoing_search_pending = false;
 
-MPI_Request outgoing_search_req;
+MPI_Request outgoing_search_req[2];
 MPI_Request outgoing_result_req;
 
 struct search_result{
@@ -60,6 +61,15 @@ constexpr int search_tag        = 3;
 constexpr int search_idx        = 0;
 constexpr int result_tag        = 4;
 constexpr int result_idx        = 1;
+
+constexpr int ACK_INVALID       = 0;
+constexpr int ACK_ACCEPTED      = 1;
+constexpr int ACK_DENIED        = 2;
+
+int search_ack;
+int search_ack_ans;
+MPI_Request search_ack_req;
+constexpr int search_ack_tag    = 5;
 // MPI_Request recv_res[recv_pop];
 
 
@@ -101,10 +111,15 @@ public:
     }
 } recv_res[recv_pop];
 
-void runProcessCommunicator(int argc, char* argv[]){
+bool runProcessCommunicator(int argc, char* argv[]){
     MPI_Init(&argc,&argv);
     MPI_Comm_size(MPI_COMM_WORLD, &proc_pop); //get running MPI processes
     MPI_Comm_rank(MPI_COMM_WORLD, &proc_rank);     //get current rank
+
+    if (proc_pop <= 1) {
+        MPI_Finalize();
+        return false;
+    }
 
     tbi             = new ThreadBoardInterface(!proc_rank);
     board_interface = tbi;
@@ -130,7 +145,7 @@ void runProcessCommunicator(int argc, char* argv[]){
         if (!handleSpecialMessageTasks()) break;
         makeReceives();
         makeSends();
-        if (ending_interrupt && interruption_requested && !(tbi->thr_dt[MASTER_index].used & thr_task_mask)){
+        if (ending_interrupt && interruption_requested && tbi->isEmpty(MASTER_index)){
             ending_interrupt = interruption_requested = false;
         }
         //Send search positions and receive results
@@ -154,6 +169,7 @@ void runProcessCommunicator(int argc, char* argv[]){
         std::cout << "Process " << std::setw(4) << proc_rank << "of" << proc_pop << " aborting" << std::endl;
     }
     MPI_Finalize();
+    return true;
 }
 
 void interrupt_all(){
@@ -206,7 +222,7 @@ int handleSpecialMessageTasks(){
             })){
             //wake by predicate, task should be collected
             task_id t = tbi->pending_tasks_queue.front();
-            tbi->pending_tasks_queue.pop();
+            tbi->pending_tasks_queue.pop_front();
             std::cout << "UI Process - Master Thread opens its eyes" << std::endl;
             std::cout << "UI Process - Master Thread wakes up" << std::endl;
             lk.unlock();
@@ -276,15 +292,19 @@ void makeReceives(){
                 // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Received Search!!!" << std::endl;
                 //Process Search
                 unsigned int ind = tbi->search_rind(&(incoming_search.b), MASTER_index, incoming_search.depth, incoming_search.alpha, incoming_search.beta, incoming_search.move);
-                assert(task_id(ind) != no_task);
-                comm_data[ind].proc_task_id = incoming_search.proc_task_id;
-                comm_data[ind].proc_source  = incoming_search.proc_source ;
-                //End Process Search
-                if (!(tbi->isFull(MASTER_index))){
-                    // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Opened Receive Search Channel" << std::endl;
-                    //there is available task space, create slot to receive a new one
-                    recv_res[search_idx].irecv(&incoming_search, sizeof(incoming_search), MPI_BYTE, MPI_ANY_SOURCE, search_tag, MPI_COMM_WORLD);
+                if(task_id(ind) != no_task){
+                    comm_data[ind].proc_task_id = incoming_search.proc_task_id;
+                    comm_data[ind].proc_source  = incoming_search.proc_source ;
+                    search_ack_ans              = ACK_ACCEPTED;
+                } else {
+                    search_ack_ans              = ACK_DENIED;
+                    std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Denied Search" << std::endl;
                 }
+                //send acknowledgement
+                MPI_Send(&search_ack_ans, 1, MPI_INT, incoming_search.proc_source, search_ack_tag, MPI_COMM_WORLD);
+                recv_res[search_idx].irecv(&incoming_search, sizeof(incoming_search), MPI_BYTE, MPI_ANY_SOURCE, search_tag, MPI_COMM_WORLD);
+                //End Process Search
+                    // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Opened Receive Search Channel" << std::endl;
                 break;
             }
             case result_tag:{
@@ -295,6 +315,8 @@ void makeReceives(){
                 assert(tsk->st == Executing);
                 tsk->score = result.score;
                 tsk->st    = Completed;
+                tbi->thr_dt[t >> thrd_id_offset].cmpl_arr[tsk->job_id] ^= 1 << (t & thr_task_mask);
+                assert(tbi->thr_dt[t >> thrd_id_offset].cmpl_arr[tsk->job_id] & (1 << (t & thr_task_mask)));
                 //End Process Result
                 if (--spawned_searches){
                     // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Opened Receive result Channel" << std::endl;
@@ -314,8 +336,30 @@ void makeReceives(){
 void makeSends(){
     if (outgoing_search_pending){
         int flag = 0;
-        MPI_Test(&outgoing_search_req, &flag, MPI_STATUS_IGNORE);
+        MPI_Testall(2, outgoing_search_req, &flag, MPI_STATUSES_IGNORE);
         outgoing_search_pending = !flag;
+        if (flag){
+            task_id t = outgoing_search.proc_task_id;
+            Task * tsk = &(tbi->thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask]);
+            switch (search_ack){
+                case ACK_ACCEPTED:{
+                    delete tsk->board.exchange(NULL);
+                    break;
+                }
+                case ACK_DENIED:{
+                    tsk->st = Pending;
+                    std::unique_lock<std::mutex> lk(tbi->pending_tasks_m);
+                    tbi->pending_tasks_queue.push_back(t);
+                    lk.unlock();
+                    tbi->pending_tasks_cv.notify_all();
+                    break;
+                }
+                default:{
+                    assert(false);
+                    break;
+                }
+            }
+        }
     }
     if (proc_rank != UI_proc && interrupt_responce_pending && !outgoing_search_pending){
         interrupt_responce_pending = false;
@@ -325,15 +369,26 @@ void makeSends(){
     if (!(outgoing_search_pending || interruption_requested)){
         //find search to send to another process
         std::unique_lock<std::mutex> lk(tbi->pending_tasks_m);
-        if (tbi->idle_threads == 0 && !tbi->pending_tasks_queue.empty()){ //
-            task_id t = tbi->pending_tasks_queue.front();
+        auto t_it = std::find_if(std::begin(tbi->pending_tasks_queue), 
+                            std::end(tbi->pending_tasks_queue), 
+                            [](const task_id &ti){
+                                return !(
+                                        ThreadBoardInterface::isBomb(ti)    || 
+                                        ThreadBoardInterface::isMasters(ti) || 
+                                        tbi->thr_dt[ti >> thrd_id_offset].tasks[ti & thr_task_mask].type == IterativeDeepening ||
+                                        tbi->thr_dt[ti >> thrd_id_offset].tasks[ti & thr_task_mask].depth <= 3
+                                        );
+                            });
+        if (t_it != std::end(tbi->pending_tasks_queue)){
+        // if (tbi->idle_threads == 0 && !tbi->pending_tasks_queue.empty()){ //
+            task_id t = *t_it;
+            lk.unlock();
             Task * tsk = &(tbi->thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask]);
-            if (false && !(ThreadBoardInterface::isBomb(t) || ThreadBoardInterface::isMasters(t) || (tsk->type == IterativeDeepening))){
-                tbi->pending_tasks_queue.pop();
-                lk.unlock();
+            // if (!(ThreadBoardInterface::isBomb(t) || ThreadBoardInterface::isMasters(t) || (tsk->type == IterativeDeepening))){
+            //     tbi->pending_tasks_queue.pop_front();
                 State t2 = Pending;
                 if (tsk->st.compare_exchange_strong(t2, Executing)){
-                    Board *brd                   = tsk->board.exchange(NULL);
+                    Board *brd                   = tsk->board;
                     memcpy(&(outgoing_search.b), brd, sizeof(Board));
                     outgoing_search.depth        = tsk->depth;
                     outgoing_search.alpha        = tsk->alpha;
@@ -341,7 +396,6 @@ void makeSends(){
                     outgoing_search.move         = tsk->move ;
                     outgoing_search.proc_source  = proc_rank;
                     outgoing_search.proc_task_id = t;
-                    delete brd;
                     int dest = rand()%(proc_pop-1);
                     if (dest == proc_rank) dest = proc_pop-1;
                     if (!spawned_searches){
@@ -349,13 +403,19 @@ void makeSends(){
                         recv_res[result_idx].irecv(&result         , sizeof(search_result  ), MPI_BYTE, MPI_ANY_SOURCE, result_tag, MPI_COMM_WORLD);
                     }
                     // std::cout << "Process " << std::setw(4) << proc_rank << "of" << proc_pop << " sends search (" << spawned_searches << ") to " << dest << std::endl;
-                    MPI_Issend(&outgoing_search, sizeof(outgoing_search), MPI_BYTE, dest, search_tag, MPI_COMM_WORLD, &outgoing_search_req);
+#ifndef NDEBUG
+                    search_ack = ACK_INVALID;
+#endif
+                    MPI_Irecv(&search_ack, 1, MPI_INTEGER, dest, search_ack_tag, MPI_COMM_WORLD, &outgoing_search_req[1]);
+                    MPI_Issend(&outgoing_search, sizeof(outgoing_search), MPI_BYTE, dest, search_tag, MPI_COMM_WORLD, &outgoing_search_req[0]);
                     outgoing_search_pending = true;
                     ++spawned_searches;
                 }
-            } else {
-                lk.unlock();
-            }
+            // } else {
+            //     lk.unlock();
+            // }
+        } else {
+            lk.unlock();
         }
     }
     if (outgoing_result_pending){
@@ -370,12 +430,14 @@ void makeSends(){
         out_result.score                = tsk->score;
         out_result.proc_task_id         = comm_data[t].proc_task_id;
         tsk->st                         = Invalid;
-        if (tbi->isFull(MASTER_index)){
-            // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Opened Receive Search Channel" << std::endl;
-            //there is available task space, create slot to receive a new one
-            recv_res[search_idx].irecv(&incoming_search, sizeof(incoming_search), MPI_BYTE, MPI_ANY_SOURCE, search_tag, MPI_COMM_WORLD);
-        }
-        tbi->thr_dt[MASTER_index].used ^= 1 << t;
+        // if (tbi->isFull(MASTER_index)){
+        //     // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Opened Receive Search Channel" << std::endl;
+        //     //there is available task space, create slot to receive a new one
+        //     recv_res[search_idx].irecv(&incoming_search, sizeof(incoming_search), MPI_BYTE, MPI_ANY_SOURCE, search_tag, MPI_COMM_WORLD);
+        // }
+        tbi->thr_dt[MASTER_index].used_tot ^= 1 << t;
+        tbi->thr_dt[MASTER_index].used_arr[tbi->thr_dt[MASTER_index].job_id] ^= 1 << t;
+        tbi->thr_dt[MASTER_index].cmpl_arr[tbi->thr_dt[MASTER_index].job_id] ^= 1 << t;
         // std::cout << "Process " << std::setw(4) << proc_rank << "of" << proc_pop << " sends results to " << comm_data[t].proc_source << std::endl;
         MPI_Isend(&out_result, sizeof(search_result), MPI_BYTE, comm_data[t].proc_source, result_tag, MPI_COMM_WORLD, &outgoing_result_req);
         outgoing_result_pending = true;

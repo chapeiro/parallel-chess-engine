@@ -8,37 +8,46 @@
 #include "ThreadBoardInterface.hpp"
 
 
-thread_data::thread_data(): used(1 << task_pop), job_id(0){}
+thread_data::thread_data(): job_id(0), used_tot(1 << task_pop){
+    for (unsigned int i = 0 ; i < job_max ; ++i) {
+        used_arr[i] = 1 << task_pop;
+        cmpl_arr[i] = 0;
+        w[i].alpha = -inf;
+        w[i].beta  = +inf;
+    }
+}
 
 inline task_id thread_data::createTaskId(unsigned int t) const{
    return t | (thrd_id << thrd_id_offset); 
 }
 
 inline bool thread_data::isFull() const {
-    return !((~used) & thr_task_mask);
+    return !((~used_tot) & thr_task_mask);
 }
 
 inline bool thread_data::isEmpty() const {
-    return !(used & thr_task_mask);
+    return !(used_tot & thr_task_mask);
 }
 
 inline unsigned int thread_data::peek_task(){
-    unsigned int t = square((~used) & -(~used));
+    unsigned int t = square((~used_tot) & -(~used_tot));
     if (t >= task_pop) return no_task;
-    used |= 1 << t;
+    for (int i = 0 ; i < job_max ; ++i) assert(!(used_arr[i] & (1 << t)));
+    for (int i = 0 ; i < job_max ; ++i) assert(!(cmpl_arr[i] & (1 << t)));
+    used_tot         |= 1 << t;
+    used_arr[job_id] |= 1 << t;
     return t;
 }
 
 task_id thread_data::createGoTask(Board *b, int depth, time_control tc){
     unsigned int t  = peek_task();
     if (t == no_task) return no_task;
-    Board *b2 = new Board(b);
-    tasks[t].board  = b2;
-    b2->toWindow(-inf, +inf, tasks[t].w);
+    tasks[t].board  = new Board(b);
     tasks[t].type   = TaskType::IterativeDeepening;
     tasks[t].tc     = tc;
     tasks[t].depth  = depth;
     tasks[t].job_id = job_id;
+    tasks[t].w      = w+job_id;
     tasks[t].st     = Pending;
     return createTaskId(t);
 }
@@ -47,8 +56,7 @@ task_id thread_data::search(Board * __restrict brd, int depth, int alpha, int be
 #ifndef SIMULATE_SINGLETHREAD
     unsigned int t  = peek_task();
     if (t == no_task) return no_task;
-    Board *b = new Board(brd);
-    b->toWindow(-beta, -alpha, tasks[t].w);
+    Board * b       = new Board(brd);
     tasks[t].board  = b;
     tasks[t].type   = TaskType::PVS;
     tasks[t].depth  = depth;
@@ -56,6 +64,7 @@ task_id thread_data::search(Board * __restrict brd, int depth, int alpha, int be
     tasks[t].beta   = beta;
     tasks[t].move   = child;
     tasks[t].job_id = job_id;
+    tasks[t].w      = w+job_id;
     tasks[t].st     = Pending;
     return createTaskId(t);
 #else
@@ -90,7 +99,7 @@ ThreadBoardInterface::~ThreadBoardInterface(){
 
     //send bombs to kill threads
     for (unsigned int i = 0 ; i < thread_pop+1 ; ++i) { //+1 for master
-        pending_tasks_queue.push(createBomb());
+        pending_tasks_queue.push_back(createBomb());
     }
     pending_tasks_cv.notify_all();
 
@@ -137,7 +146,7 @@ bool ThreadBoardInterface::go(int depth, time_control tc){
     task_id t = thr_dt[UI_index].createGoTask(board, depth, tc);
     if (t == no_task) return false;
     std::unique_lock<std::mutex> lk(pending_tasks_m);
-    pending_tasks_queue.push(t);
+    pending_tasks_queue.push_back(t);
     lk.unlock();
     pending_tasks_cv.notify_all();
     return true;
@@ -151,7 +160,13 @@ void thread_data::ui_garbage_collection(){
     if (!thrd) return;
     assert(thrd->get_id() == std::this_thread::get_id());
     for (unsigned int i = 0 ; i < task_pop ; ++i) {
-        if (!tasks[i].board) used &= ~(1 << i);
+        if (!tasks[i].board) {
+            used_tot         &= ~(1 << i);
+            used_arr[job_id] &= ~(1 << i);
+            cmpl_arr[job_id] &= ~(1 << i);
+            for (int t = 0 ; t < job_max ; ++t) assert(!(used_arr[t] & (1 << i)));
+            for (int t = 0 ; t < job_max ; ++t) assert(!(cmpl_arr[t] & (1 << i)));
+        }
     }
 }
 
@@ -187,7 +202,7 @@ void ThreadBoardInterface::run(unsigned int id){
             assert(!pending_tasks_queue.empty());
             //std::cout << "Thread " << std::setw(2) << id << " wakes up." << std::endl;
             t = pending_tasks_queue.front();
-            pending_tasks_queue.pop();
+            pending_tasks_queue.pop_front();
         }while(!(isBomb(t) || thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask].isPending()));
         --idle_threads;
         lk.unlock();
@@ -199,7 +214,7 @@ void ThreadBoardInterface::run(unsigned int id){
 void ThreadBoardInterface::execute(task_id t, unsigned int id){
     assert((t >> thrd_id_offset) != id);
     thr_dt[id].increaseDepth();
-    thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask].executeAs(id, t & thr_task_mask);
+    thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask].executeAs(thr_dt+id, t & thr_task_mask, thr_dt+(t >> thrd_id_offset));
     thr_dt[id].decreaseDepth();
 }
 
@@ -209,15 +224,15 @@ bool Task::isPending(){
     return (st == Pending);
 }
 
-bool Task::executeAs(unsigned int thrd_id, task_id taskID){
+bool Task::executeAs(thread_data *thrd, task_id taskID, thread_data *owner){
     // std::lock_guard<std::mutex> lk(st_m);
    State t = Pending;
     if (!st.compare_exchange_strong(t, Executing)) return false;
     // st = Executing;
     Board * b = board.exchange(NULL);
     assert(b);
-    b->setThreadID(thrd_id);
-    b->setWindow(&w);
+    b->setThreadID(thrd->thrd_id);
+    b->setWindow(w);
     // std::cout << std::setw(2) << thrd_id << " got task @" << std::setw(4) << depth << "(" << std::hex << ((void *) b) << ")" << std::dec<< std::endl;
     switch (type){
         case IterativeDeepening: //no result, clean it...
@@ -231,7 +246,12 @@ bool Task::executeAs(unsigned int thrd_id, task_id taskID){
         //     break;
     }
     delete b;
+    assert(st == Executing);
     st = Completed;
+    for (int i = 0 ; i < job_max ; ++i) assert(!(owner->cmpl_arr[i] & (1 << taskID)));
+    unsigned int p = job_id;
+    owner->cmpl_arr[p] ^= 1 << taskID;
+    assert((owner->cmpl_arr[p].load() & (1 << taskID)) || st == Invalid);
     return true;
 }
 
@@ -249,22 +269,14 @@ unsigned int ThreadBoardInterface::search_rind(Board * __restrict brd, unsigned 
 
     std::unique_lock<std::mutex> lk(pending_tasks_m);
     // std::cout << std::setw(2) << thrd_id << " set task @" << std::setw(4) << depth << "(" << std::hex << ((void *) brd) << ")" << std::dec<< std::endl;
-    pending_tasks_queue.push(t);
+    pending_tasks_queue.push_back(t);
     lk.unlock();
     pending_tasks_cv.notify_all();
     return (t & thr_task_mask);
 }
 
 bool ThreadBoardInterface::search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child){
-    task_id t = thr_dt[thrd_id].search(brd, depth, alpha, beta, child);
-    if (t == no_task) return false;
-
-    std::unique_lock<std::mutex> lk(pending_tasks_m);
-    // std::cout << std::setw(2) << thrd_id << " set task @" << std::setw(4) << depth << "(" << std::hex << ((void *) brd) << ")" << std::dec<< std::endl;
-    pending_tasks_queue.push(t);
-    lk.unlock();
-    pending_tasks_cv.notify_all();
-    return true;
+    return (search_rind(brd, thrd_id, depth, alpha, beta, child) != no_task);
 }
 
 bool ThreadBoardInterface::collectNextScore(int &score, unsigned int thrd_id, int depth, internal_move &child){
@@ -280,112 +292,85 @@ void ThreadBoardInterface::updateWindows(int alpha, int beta, unsigned int thrd_
 }
 
 void thread_data::updateWindows(int alpha, int beta){
-    task_bitmask mask  = thr_task_mask & used;
-    while (mask){
-        unsigned int t = square(pop_lsb(mask));
-        if (tasks[t].job_id == job_id && (tasks[t].st == Executing || tasks[t].st == Pending)){
-            tasks[t].w.alpha = alpha;
-            tasks[t].w.beta  = beta ;
-        }
-    }
+    w[job_id].alpha = alpha;
+    w[job_id].beta  = beta ;
 }
 
 bool thread_data::collectNextScoreUB(int &score, int depth, internal_move &child){
-    task_bitmask mask  = thr_task_mask & used;
-    while (mask){
-        unsigned int t = square(pop_lsb(mask));
-        if (tasks[t].job_id == job_id && tasks[t].st == Completed){
-            assert(tasks[t].depth == depth);
-            score = tasks[t].score;
-            child = tasks[t].move;
-            tasks[t].st = Invalid;
-            used ^= 1 << t;
-            assert(!(used & (1 << t)));
-            return true;
-        }
-    }
-    return false;
+    task_bitmask mask = cmpl_arr[job_id];
+    // while (mask){
+    if (!mask) return false;
+    unsigned int t = square(pop_lsb(mask));
+    assert(tasks[t].st == Completed); // if
+    assert(tasks[t].job_id == job_id);
+    assert(tasks[t].depth == depth);
+    score = tasks[t].score;
+    child = tasks[t].move;
+    tasks[t].st = Invalid;
+    used_tot         ^= 1 << t;
+    used_arr[job_id] ^= 1 << t;
+    cmpl_arr[job_id] ^= 1 << t;
+    assert(!(used_tot         & (1 << t)));
+    for (int i = 0 ; i < job_max ; ++i) assert(!(used_arr[i] & (1 << t)));
+    for (int i = 0 ; i < job_max ; ++i) assert(!(cmpl_arr[i] & (1 << t)));
+    return true;
+    //     }
+    // }
+    // return false;
 }
 
 bool thread_data::collectNextScore(int &score, int depth, internal_move &child){
-    task_bitmask mask  = thr_task_mask & used;
-    task_bitmask mask2 = thr_task_mask & used;
-    unsigned int t;
-    do {
-        task_bitmask tmp = used & mask2;
-        if (!tmp) return lazy_execute(mask, score, depth, child);
-        task_bitmask lsb = tmp & -tmp;
-        t = square(lsb);
-        if (tasks[t].job_id == job_id){
-            if (tasks[t].st == Completed) break;
-        } else {
-            mask ^= lsb;
-        }
-        mask2 ^= lsb;
-    } while (true);
-    assert(tasks[t].depth == depth);
-    score = tasks[t].score;
-    child = tasks[t].move;
-    tasks[t].st = Invalid;
-    used ^= 1 << t;
-    assert(!(used & (1 << t)));
-    return true;
+    return lazy_execute(score, depth, child);
 }
 
-bool thread_data::lazy_execute(task_bitmask mask, int &score, int depth, internal_move &child){
-    bool ex = false;
-    task_bitmask b = mask;
-    while(mask){
-        unsigned int i = square(pop_lsb(mask));
-        if (tasks[i].job_id == job_id){ 
-            increaseDepth();
-            assert((used & (1 << i)));
-            assert(tasks[i].st != Invalid);
-            if(tasks[i].executeAs(thrd_id, i)){
-                assert(tasks[i].depth == depth);
-                score = tasks[i].score;
-                child = tasks[i].move;
-                tasks[i].st = Invalid;
-                used ^= 1 << i;
-                assert(!(used & (1 << i)));
+bool thread_data::lazy_execute(int &score, int depth, internal_move &child){
+    if (!(thr_task_mask & used_arr[job_id])) return false;
+    while(true){
+        if (collectNextScoreUB(score, depth, child)) return true;
+        task_bitmask mask = thr_task_mask & used_arr[job_id];
+        increaseDepth();
+        while (mask){
+            unsigned int t = square(pop_lsb(mask));
+        // decreaseDepth();
+            // assert(tasks[t].job_id == job_id);
+            assert((used_tot         & (1 << t)));
+            // assert((used_arr[job_id] & (1 << t)));
+        // increaseDepth();
+            assert(tasks[t].st != Invalid);
+            if(tasks[t].executeAs(this, t, this)){
+                assert(tasks[t].depth == depth);
+                score = tasks[t].score;
+                child = tasks[t].move;
+                tasks[t].st = Invalid;
                 decreaseDepth();
+                used_tot         ^= 1 << t;
+                used_arr[job_id] ^= 1 << t;
+                cmpl_arr[job_id] ^= 1 << t;
+                assert(!(used_tot         & (1 << t)));
+                for (int i = 0 ; i < job_max ; ++i) assert(!(used_arr[i] & (1 << t)));
+                for (int i = 0 ; i < job_max ; ++i) assert(!(cmpl_arr[i] & (1 << t)));
                 return true;
-            } else {
-                ex = true;
             }
-            decreaseDepth();
         }
+        decreaseDepth();
+        // std::this_thread::yield();
     }
-    if (!ex) return false;
-    task_bitmask mask2 = b;
-    unsigned int t = 0;
-    do {
-        task_bitmask tmp = mask2;
-        if (!tmp) tmp = mask2 = b;// & used;
-        task_bitmask lsb = tmp & -tmp;
-        t = square(lsb);
-        if (tasks[t].job_id == job_id && tasks[t].st == Completed) break;
-        mask2 ^= lsb;
-    } while (true);
-    assert(tasks[t].depth == depth);
-    score = tasks[t].score;
-    child = tasks[t].move;
-    tasks[t].st = Invalid;
-    used ^= 1 << t;
-    assert(!(used & (1 << t)));
-    return true;
+    assert(false);
+    return false;
 }
 
 void thread_data::increaseDepth() {
     assert(std::this_thread::get_id() == this->thrd->get_id());
-    if (std::this_thread::get_id() != this->thrd->get_id()) std::cout << "asdakhdkajkdasjd" << std::endl;
     ++job_id;
+    w[job_id].alpha = -inf;
+    w[job_id].beta  = +inf;
+    assert(job_id < job_max);
 }
 
 void thread_data::decreaseDepth() {
     assert(std::this_thread::get_id() == this->thrd->get_id());
-    if (std::this_thread::get_id() != this->thrd->get_id()) std::cout << "asdakhdkajkdasjd" << std::endl;
     --job_id;
+    assert(job_id >= 0);
 }
 
 void ThreadBoardInterface::increaseDepth(unsigned int thrd_id) {
@@ -401,10 +386,9 @@ task_id ThreadBoardInterface::getCompletedTask(unsigned int thrd_id) const{
 }
 
 task_id thread_data::getCompletedTask() const{
-    task_bitmask mask  = thr_task_mask & used;
+    task_bitmask mask  = thr_task_mask & used_tot;
     while (mask){
-        task_bitmask lsb = pop_lsb(mask);
-        unsigned int t = square(lsb);
+        unsigned int t = square(pop_lsb(mask));
         if (tasks[t].st == Completed) return t;
     }
     return no_task;

@@ -173,9 +173,7 @@ bool multiproc = false;
 
 int main(int argc, char* argv[]){
 	dup2sock(argc, argv);
-	if (multiproc){
-		runProcessCommunicator(argc, argv);
-	} else {
+	if (!multiproc || !(runProcessCommunicator(argc, argv))){ //runProcessCommunicator is master thread's base code 
 		board_interface = new ThreadBoardInterface(true);
 		((ThreadBoardInterface* ) board_interface)->block();
 	}

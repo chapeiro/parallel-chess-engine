@@ -49,7 +49,7 @@ void debug(std::string);
 #define STARTING_DEPTH (2)
 #define ELAPSED_TIME_FACTOR (2)
 
-constexpr unsigned int MAX_BOARDS(128);
+constexpr unsigned int MAX_BOARDS(256);
 
 #ifdef STATS
 #define statistics(x) x
