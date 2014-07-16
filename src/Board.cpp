@@ -646,7 +646,7 @@ void Board::go(int maxDepth, time_control tc){
 	}
 }
 
-// int rootDepth = 0;
+int rootDepth = 0;
 
 // void Board::startSearch(int maxDepth, U64 wTime, U64 bTime, U64 wInc, U64 bInc, int movesUntilTimeControl, U64 searchForXMsec, bool infinitiveSearch){
 // 	time_td startTime = get_current_time();
