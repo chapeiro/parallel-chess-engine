@@ -69,9 +69,11 @@ int connect(char * extrn_addr, int port){
     if (setsockopt(sck, SOL_SOCKET, SO_REUSEADDR, &sopt, sizeof(sopt))){
         std::clog << "socket_mngmt:option: " << strerror(errno) << std::endl;
     }
+#ifdef SO_REUSEPORT
     if (setsockopt(sck, SOL_SOCKET, SO_REUSEPORT, &sopt, sizeof(sopt))){
         std::clog << "socket_mngmt:option: " << strerror(errno) << std::endl;
     }
+#endif
     
     //create address data for incoming connection
     sockaddr_in addr;
