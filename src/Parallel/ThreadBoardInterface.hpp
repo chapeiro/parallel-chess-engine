@@ -46,14 +46,18 @@ enum State{
 void makeSends();
 void makeReceives();
 bool runProcessCommunicator(int argc, char* argv[]);
+void sendWindowUpdates();
 
 class thread_data;
 
 class Task{
     friend class thread_data;
+    friend class ThreadBoardInterface;
     friend void makeSends();
     friend void makeReceives();
     friend bool runProcessCommunicator(int argc, char* argv[]);
+    friend void sendWindowUpdates();
+
 private:
     std::atomic<Board*>     board;
     TaskType                type;
@@ -100,6 +104,7 @@ public:
     task_id createGoTask(Board *b, int depth, time_control tc);
     int collectNextScore();
     task_id search(Board * __restrict brd, int depth, int alpha, int beta, const internal_move &child);
+    task_id search2(Board * __restrict brd, int depth, int alpha, int beta, const internal_move &child);
 
     bool collectNextScore(int &score, int depth, internal_move &child);
     bool collectNextScoreUB(int &score, int depth, internal_move &child);
@@ -109,6 +114,7 @@ public:
 protected:
     task_id createTaskId(unsigned int t) const;
     unsigned int peek_task();
+    unsigned int peek_task2();
     void increaseDepth();
     void decreaseDepth();
     void ui_garbage_collection();

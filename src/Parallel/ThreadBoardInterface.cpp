@@ -52,6 +52,37 @@ task_id thread_data::createGoTask(Board *b, int depth, time_control tc){
     return createTaskId(t);
 }
 
+inline unsigned int thread_data::peek_task2(){
+    unsigned int t = square((~used_tot) & -(~used_tot));
+    if (t >= task_pop) return no_task;
+    job_id = t;
+    for (int i = 0 ; i < job_max ; ++i) assert(!(used_arr[i] & (1 << t)));
+    for (int i = 0 ; i < job_max ; ++i) assert(!(cmpl_arr[i] & (1 << t)));
+    used_tot         |= 1 << t;
+    used_arr[t]      |= 1 << t;
+    return t;
+}
+
+task_id thread_data::search2(Board * __restrict brd, int depth, int alpha, int beta, const internal_move &child){
+#ifndef SIMULATE_SINGLETHREAD
+    unsigned int t  = peek_task2();
+    if (t == no_task) return no_task;
+    Board * b       = new Board(brd);
+    tasks[t].board  = b;
+    tasks[t].type   = TaskType::PVS;
+    tasks[t].depth  = depth;
+    tasks[t].alpha  = alpha;
+    tasks[t].beta   = beta;
+    tasks[t].move   = child;
+    tasks[t].job_id = job_id;
+    tasks[t].w      = w+job_id;
+    tasks[t].st     = Pending;
+    return createTaskId(t);
+#else
+    return no_task;
+#endif
+}
+
 task_id thread_data::search(Board * __restrict brd, int depth, int alpha, int beta, const internal_move &child){
 #ifndef SIMULATE_SINGLETHREAD
     unsigned int t  = peek_task();
@@ -264,7 +295,7 @@ bool ThreadBoardInterface::isEmpty(unsigned int thrd_id) const{
 }
 
 unsigned int ThreadBoardInterface::search_rind(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child){
-    task_id t = thr_dt[thrd_id].search(brd, depth, alpha, beta, child);
+    task_id t = thr_dt[thrd_id].search2(brd, depth, alpha, beta, child);
     if (t == no_task) return no_task;
 
     std::unique_lock<std::mutex> lk(pending_tasks_m);
@@ -276,7 +307,15 @@ unsigned int ThreadBoardInterface::search_rind(Board * __restrict brd, unsigned 
 }
 
 bool ThreadBoardInterface::search(Board * __restrict brd, unsigned int thrd_id, int depth, int alpha, int beta, const internal_move &child){
-    return (search_rind(brd, thrd_id, depth, alpha, beta, child) != no_task);
+    task_id t = thr_dt[thrd_id].search(brd, depth, alpha, beta, child);
+    if (t == no_task) return false;
+
+    std::unique_lock<std::mutex> lk(pending_tasks_m);
+    // std::cout << std::setw(2) << thrd_id << " set task @" << std::setw(4) << depth << "(" << std::hex << ((void *) brd) << ")" << std::dec<< std::endl;
+    pending_tasks_queue.push_back(t);
+    lk.unlock();
+    pending_tasks_cv.notify_all();
+    return true;
 }
 
 bool ThreadBoardInterface::collectNextScore(int &score, unsigned int thrd_id, int depth, internal_move &child){
@@ -386,10 +425,11 @@ task_id ThreadBoardInterface::getCompletedTask(unsigned int thrd_id) const{
 }
 
 task_id thread_data::getCompletedTask() const{
+    //only by master thread
     task_bitmask mask  = thr_task_mask & used_tot;
     while (mask){
         unsigned int t = square(pop_lsb(mask));
-        if (tasks[t].st == Completed) return t;
+        if (tasks[t].st == Completed && (cmpl_arr[t] & (task_bitmask(1) << t))) return t;
     }
     return no_task;
 }

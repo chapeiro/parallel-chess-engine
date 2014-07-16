@@ -27,6 +27,7 @@ struct search_message{
     internal_move           move;
     int                     proc_source;
     task_id                 proc_task_id;
+    unsigned int            pr_index;
 
     search_message(): move(0, 0){}
 } incoming_search, outgoing_search;
@@ -39,7 +40,8 @@ MPI_Request outgoing_result_req;
 
 struct search_result{
     int                     score;
-    int                     proc_task_id;
+    task_id                 proc_task_id;
+    unsigned int            pr_index;
 } result, out_result;
 
 //special tasks, are task that can be identified only by their task id
@@ -56,22 +58,21 @@ MPI_Request sp_req[special_tasks_pop];
 // MPI_Status  sp_stt[special_tasks_pop];
 task_id     sp_tsk[special_tasks_pop];
 
-constexpr int recv_pop          = 2;
+constexpr int recv_pop          = 3;
 constexpr int search_tag        = 3;
 constexpr int search_idx        = 0;
 constexpr int result_tag        = 4;
 constexpr int result_idx        = 1;
+constexpr int window_tag        = 5;
+constexpr int window_idx        = 2;
 
-constexpr int ACK_INVALID       = 0;
-constexpr int ACK_ACCEPTED      = 1;
-constexpr int ACK_DENIED        = 2;
-
-int search_ack;
+unsigned int search_ack;
 int search_ack_ans;
 MPI_Request search_ack_req;
-constexpr int search_ack_tag    = 5;
+constexpr int search_ack_tag    = 6;
 // MPI_Request recv_res[recv_pop];
 
+int dest = 0;
 
 constexpr int uninterrupt_tag   = 4;
 bool interrupt_responce_pending = false;
@@ -82,7 +83,27 @@ ThreadBoardInterface* tbi = NULL;
 struct communication_data{
     task_id             proc_task_id;
     int                 proc_source ;
+    Window              w;
+    bool                valid;
+    unsigned int        pr_index;
 } comm_data[task_pop];
+
+uint64_t active_out_jobs = 0;
+uint64_t nt = 0;
+
+struct window_update{
+    unsigned int index;
+    int alpha;
+    int beta ;
+} win_update, win_out;
+
+struct out_searches{
+    Task *       t;
+    int          alpha;
+    int          beta;
+    unsigned int i;
+    int          p;
+} out_jobs[64];
 
 class MPI_Request_Wrapper{
     MPI_Request req;
@@ -134,7 +155,10 @@ bool runProcessCommunicator(int argc, char* argv[]){
     }
 
     recv_res[search_idx].irecv(&incoming_search, sizeof(incoming_search), MPI_BYTE, MPI_ANY_SOURCE, search_tag, MPI_COMM_WORLD);
+    recv_res[window_idx].irecv(&win_update     , sizeof(window_update  ), MPI_BYTE, MPI_ANY_SOURCE, window_tag, MPI_COMM_WORLD);
     // MPI_Irecv(&result         , sizeof(search_result  ), MPI_BYTE, MPI_ANY_SOURCE, result_tag, MPI_COMM_WORLD, &recv_res[result_idx]);
+
+    // for (unsigned int i = 0 ; i < task_pop ; ++i) comm_data[i].valid = false;
 
     while (true){
         // interrupt_requested | interrupt_responce_pending
@@ -153,6 +177,7 @@ bool runProcessCommunicator(int argc, char* argv[]){
 
     //FIXME if interrupt is not send before bomb, pending searches may exist, leading to a deadlock
     recv_res[search_idx].cancel();
+    recv_res[window_idx].cancel();
     // MPI_Cancel(&recv_res[result_idx]);
 
     if (proc_rank == UI_proc){         //UI process, send bombs to everyone!!!
@@ -274,6 +299,34 @@ int handleSpecialMessageTasks(){
     return 2;
 }
 
+void deactivateTask(Task * tsk){
+    uint64_t mask = active_out_jobs;
+    while (mask){
+        unsigned int t = square(pop_lsb(mask));
+        if (out_jobs[t].t == tsk){
+            active_out_jobs ^= 1 << t;
+            return;
+        }
+    }
+    assert(false);
+}
+
+void sendWindowUpdates(){
+    uint64_t mask = active_out_jobs;
+    while (mask){
+        unsigned int t = square(pop_lsb(mask));
+        if (out_jobs[t].i >= job_max) continue;
+        if (out_jobs[t].t->w->alpha != out_jobs[t].alpha || out_jobs[t].t->w->beta != out_jobs[t].beta){
+            out_jobs[t].alpha = out_jobs[t].t->w->alpha;
+            out_jobs[t].beta  = out_jobs[t].t->w->beta ;
+            win_out.index = out_jobs[t].i;
+            win_out.alpha = out_jobs[t].alpha;
+            win_out.beta  = out_jobs[t].beta ;
+            MPI_Send(&win_out, sizeof(window_update), MPI_BYTE, out_jobs[t].p, window_tag, MPI_COMM_WORLD);
+        }
+    }
+}
+
 void makeReceives(){
     do {
         bool flag = false;
@@ -295,9 +348,11 @@ void makeReceives(){
                 if(task_id(ind) != no_task){
                     comm_data[ind].proc_task_id = incoming_search.proc_task_id;
                     comm_data[ind].proc_source  = incoming_search.proc_source ;
-                    search_ack_ans              = ACK_ACCEPTED;
+                    comm_data[ind].pr_index     = incoming_search.pr_index    ;
+                    assert(tbi->thr_dt[MASTER_index].used_tot & (1 << ind));
+                    search_ack_ans              = ind;
                 } else {
-                    search_ack_ans              = ACK_DENIED;
+                    search_ack_ans              = job_max;
                     std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Denied Search" << std::endl;
                 }
                 //send acknowledgement
@@ -317,11 +372,27 @@ void makeReceives(){
                 tsk->st    = Completed;
                 tbi->thr_dt[t >> thrd_id_offset].cmpl_arr[tsk->job_id] ^= 1 << (t & thr_task_mask);
                 assert(tbi->thr_dt[t >> thrd_id_offset].cmpl_arr[tsk->job_id] & (1 << (t & thr_task_mask)));
+                assert(out_jobs[result.pr_index].t == tsk);
+                deactivateTask(tsk);
+
                 //End Process Result
                 if (--spawned_searches){
                     // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Opened Receive result Channel" << std::endl;
                     recv_res[result_idx].irecv(&result         , sizeof(search_result  ), MPI_BYTE, MPI_ANY_SOURCE, result_tag, MPI_COMM_WORLD);
                 }
+                break;
+            }
+            case window_tag:{
+                // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Window update received (" << win_update.index << ")" << std::endl;
+                unsigned int ind = win_update.index;
+                if ((tbi->thr_dt[MASTER_index].used_tot & (1 << ind)) && 
+                        (!outgoing_result_pending || 
+                            out_result.proc_task_id != comm_data[ind].proc_task_id ||
+                            out_result.pr_index     != comm_data[ind].pr_index)){
+                    tbi->thr_dt[MASTER_index].job_id = ind;
+                    tbi->updateWindows(win_update.alpha, win_update.beta, MASTER_index);
+                }
+                recv_res[window_idx].irecv(&win_update        , sizeof(window_update   ), MPI_BYTE, MPI_ANY_SOURCE, window_tag, MPI_COMM_WORLD);
                 break;
             }
             default:{
@@ -341,23 +412,18 @@ void makeSends(){
         if (flag){
             task_id t = outgoing_search.proc_task_id;
             Task * tsk = &(tbi->thr_dt[t >> thrd_id_offset].tasks[t & thr_task_mask]);
-            switch (search_ack){
-                case ACK_ACCEPTED:{
-                    delete tsk->board.exchange(NULL);
-                    break;
-                }
-                case ACK_DENIED:{
-                    tsk->st = Pending;
-                    std::unique_lock<std::mutex> lk(tbi->pending_tasks_m);
-                    tbi->pending_tasks_queue.push_back(t);
-                    lk.unlock();
-                    tbi->pending_tasks_cv.notify_all();
-                    break;
-                }
-                default:{
-                    assert(false);
-                    break;
-                }
+            assert(search_ack <= job_max);
+            if (search_ack == job_max){ //Denied
+                tsk->st = Pending;
+                std::unique_lock<std::mutex> lk(tbi->pending_tasks_m);
+                tbi->pending_tasks_queue.push_back(t);
+                lk.unlock();
+                tbi->pending_tasks_cv.notify_all();
+                active_out_jobs ^= nt;
+                assert(!(active_out_jobs & (UINT64_C(1) << square(nt))));
+            } else { //Accepted
+                delete tsk->board.exchange(NULL);
+                out_jobs[square(nt)].i       = search_ack;
             }
         }
     }
@@ -366,7 +432,7 @@ void makeSends(){
         task_id inter = ThreadBoardInterface::createPrInterrupt();
         MPI_Send(&inter , 1, MPI_CCHAPEIRO_TASK_ID, UI_proc, interrupt_tag, MPI_COMM_WORLD);
     }
-    if (!(outgoing_search_pending || interruption_requested)){
+    if (!(outgoing_search_pending || interruption_requested) && ~active_out_jobs){
         //find search to send to another process
         std::unique_lock<std::mutex> lk(tbi->pending_tasks_m);
         auto t_it = std::find_if(std::begin(tbi->pending_tasks_queue), 
@@ -396,7 +462,7 @@ void makeSends(){
                     outgoing_search.move         = tsk->move ;
                     outgoing_search.proc_source  = proc_rank;
                     outgoing_search.proc_task_id = t;
-                    int dest = rand()%(proc_pop-1);
+                    dest = rand()%(proc_pop-1);
                     if (dest == proc_rank) dest = proc_pop-1;
                     if (!spawned_searches){
                         // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Opened Receive result Channel" << std::endl;
@@ -404,8 +470,19 @@ void makeSends(){
                     }
                     // std::cout << "Process " << std::setw(4) << proc_rank << "of" << proc_pop << " sends search (" << spawned_searches << ") to " << dest << std::endl;
 #ifndef NDEBUG
-                    search_ack = ACK_INVALID;
+                    search_ack = job_max + 1;
 #endif
+                    nt = (~active_out_jobs) & -(~active_out_jobs);
+                    active_out_jobs ^= nt;
+                    int ind_nt       = square(nt);
+                    out_jobs[ind_nt].t       = tsk;
+                    out_jobs[ind_nt].alpha   = tsk->alpha;
+                    out_jobs[ind_nt].beta    = tsk->beta ;
+                    out_jobs[ind_nt].i       = job_max;
+                    out_jobs[ind_nt].p       = dest;
+                    assert(active_out_jobs & (UINT64_C(1) << ind_nt));
+                    outgoing_search.pr_index = ind_nt;
+
                     MPI_Irecv(&search_ack, 1, MPI_INTEGER, dest, search_ack_tag, MPI_COMM_WORLD, &outgoing_search_req[1]);
                     MPI_Issend(&outgoing_search, sizeof(outgoing_search), MPI_BYTE, dest, search_tag, MPI_COMM_WORLD, &outgoing_search_req[0]);
                     outgoing_search_pending = true;
@@ -429,6 +506,7 @@ void makeSends(){
         assert(tsk->st == Completed);
         out_result.score                = tsk->score;
         out_result.proc_task_id         = comm_data[t].proc_task_id;
+        out_result.pr_index             = comm_data[t].pr_index;
         tsk->st                         = Invalid;
         // if (tbi->isFull(MASTER_index)){
         //     // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Opened Receive Search Channel" << std::endl;
@@ -436,10 +514,12 @@ void makeSends(){
         //     recv_res[search_idx].irecv(&incoming_search, sizeof(incoming_search), MPI_BYTE, MPI_ANY_SOURCE, search_tag, MPI_COMM_WORLD);
         // }
         tbi->thr_dt[MASTER_index].used_tot ^= 1 << t;
-        tbi->thr_dt[MASTER_index].used_arr[tbi->thr_dt[MASTER_index].job_id] ^= 1 << t;
-        tbi->thr_dt[MASTER_index].cmpl_arr[tbi->thr_dt[MASTER_index].job_id] ^= 1 << t;
+        tbi->thr_dt[MASTER_index].used_arr[t] ^= 1 << t;
+        tbi->thr_dt[MASTER_index].cmpl_arr[t] ^= 1 << t;
         // std::cout << "Process " << std::setw(4) << proc_rank << "of" << proc_pop << " sends results to " << comm_data[t].proc_source << std::endl;
-        MPI_Isend(&out_result, sizeof(search_result), MPI_BYTE, comm_data[t].proc_source, result_tag, MPI_COMM_WORLD, &outgoing_result_req);
+        // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Sends results (" << out_result.pr_index << ")" << std::endl;
+        MPI_Issend(&out_result, sizeof(search_result), MPI_BYTE, comm_data[t].proc_source, result_tag, MPI_COMM_WORLD, &outgoing_result_req);
         outgoing_result_pending = true;
     }
+    sendWindowUpdates();
 }
