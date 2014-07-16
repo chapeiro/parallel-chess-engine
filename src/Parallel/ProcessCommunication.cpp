@@ -353,7 +353,7 @@ void makeReceives(){
                     search_ack_ans              = ind;
                 } else {
                     search_ack_ans              = job_max;
-                    std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Denied Search" << std::endl;
+                    // std::cout <<  "Process " << std::setw(4) << proc_rank << "of" << proc_pop << ": Denied Search" << std::endl;
                 }
                 //send acknowledgement
                 MPI_Send(&search_ack_ans, 1, MPI_INT, incoming_search.proc_source, search_ack_tag, MPI_COMM_WORLD);
